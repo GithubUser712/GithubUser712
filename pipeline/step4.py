@@ -36,7 +36,7 @@ ZONE_ACCEL = "ACCEL"
 ZONE_BRAKE = "BRAKE"
 ZONE_HOLD = "HOLD"
 _MIN_ZONE_LEN_M = 0.5
-_DV_EPS = 0.02            # m/s change below which the speed counts as held
+_DV_EPS = 0.005           # m/s change per waypoint below which speed is "held"
 
 
 # ----------------------------------------------------------- speed profile
@@ -175,12 +175,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Step 4: braking and acceleration zone dictation.")
     ap.add_argument("--artifacts", type=str, default="artifacts")
+    ap.add_argument("--params-file", type=str,
+                    help="override car_params.yaml (e.g. to test a different "
+                         "speed cap without retraining)")
     args = ap.parse_args(argv)
 
     out_dir = Path(args.artifacts)
     track = load_track_data(out_dir)
 
-    params_path = out_dir / "car_params.yaml"
+    params_path = Path(args.params_file) if args.params_file \
+        else out_dir / "car_params.yaml"
     if not params_path.is_file():
         print("ERROR: car_params.yaml not found -- run step 3 first.")
         return 2

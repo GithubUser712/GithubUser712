@@ -68,8 +68,11 @@ class PingCallback(BaseCallback):
 def best_deterministic_lap(model: PPO, track: TrackData, params=None,
                            attempts: int = 5) -> tuple[np.ndarray | None, float]:
     """Roll out the trained policy without exploration noise from the start
-    pose; return the trajectory of the fastest completed lap (or None)."""
-    env = TrackEnv(track, params=params, random_spawn=False)
+    pose for TWO laps and return the trajectory of the fastest *flying* lap
+    (the second one).  A standing-start lap has a kink at the start line
+    that would poison the curvature -- and therefore the braking zones.
+    """
+    env = TrackEnv(track, params=params, random_spawn=False, laps=2)
     best_traj, best_time = None, float("inf")
     for i in range(attempts):
         obs, _ = env.reset(seed=i)
@@ -78,12 +81,17 @@ def best_deterministic_lap(model: PPO, track: TrackData, params=None,
             obs, _, terminated, truncated, info = env.step(action)
             if terminated or truncated:
                 rs = info["run_summary"]
-                lap = rs["lap_time_s"]
-                print(f"  eval attempt {i + 1}: progress {rs['progress_pct']:.1f}%"
-                      + (f", lap {lap:.2f} s" if lap else ", no lap"))
-                if lap is not None and lap < best_time:
-                    best_time = lap
-                    best_traj = np.array(env.trajectory)
+                done = rs["lap_time_s"] is not None
+                progress = np.asarray(env.progress_log)
+                flying = (progress >= track.length_m) & \
+                         (progress < 2.0 * track.length_m)
+                flying_time = float(flying.sum()) * env.dt
+                print(f"  eval attempt {i + 1}: progress "
+                      f"{rs['progress_pct']:.1f}% of 2 laps"
+                      + (f", flying lap {flying_time:.2f} s" if done else ""))
+                if done and flying_time < best_time:
+                    best_time = flying_time
+                    best_traj = np.asarray(env.trajectory)[flying]
                 break
     return best_traj, best_time
 
