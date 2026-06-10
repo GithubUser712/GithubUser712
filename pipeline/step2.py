@@ -164,7 +164,15 @@ def main(argv=None) -> int:
                     help="continue training from the saved policy")
     ap.add_argument("--eval-only", action="store_true",
                     help="skip training, just extract the raceline")
+    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
+                    help="where the neural net runs (default: auto = cuda if "
+                         "available); the simulator itself always runs on CPU")
     args = ap.parse_args(argv)
+
+    import torch
+    cuda = torch.cuda.is_available()
+    print(f"torch {torch.__version__} | CUDA available: {cuda}"
+          + (f" ({torch.cuda.get_device_name(0)})" if cuda else ""))
 
     out_dir = Path(args.artifacts)
     policy_path = out_dir / "rl_policy.zip"
@@ -180,16 +188,18 @@ def main(argv=None) -> int:
 
         if args.resume and policy_path.is_file():
             print(f"Resuming training from {policy_path}\n")
-            model = PPO.load(policy_path, env=venv)
+            model = PPO.load(policy_path, env=venv, device=args.device)
         else:
             model = PPO(
                 "MlpPolicy", venv, seed=args.seed, verbose=0,
                 learning_rate=3e-4, n_steps=1024, batch_size=256,
                 gamma=0.995, gae_lambda=0.95, ent_coef=0.005,
                 policy_kwargs=dict(net_arch=[256, 256]),
+                device=args.device,
             )
         print(f"Training PPO for {args.timesteps:,} timesteps on "
-              f"{args.n_envs} parallel sims -- one ping per finished run:\n")
+              f"{args.n_envs} parallel sims, net on '{model.device}' "
+              "-- one ping per finished run:\n")
         model.learn(total_timesteps=args.timesteps, callback=PingCallback())
         model.save(policy_path)
         venv.close()
@@ -198,7 +208,7 @@ def main(argv=None) -> int:
         if not policy_path.is_file():
             print(f"ERROR: {policy_path} not found -- train first.")
             return 2
-        model = PPO.load(policy_path)
+        model = PPO.load(policy_path, device=args.device)
 
     print("\nExtracting racing line (deterministic rollouts from the start line):")
     traj, lap_time = best_deterministic_lap(model, track)
