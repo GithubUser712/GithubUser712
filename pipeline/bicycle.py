@@ -21,6 +21,9 @@ class CarParams:
     max_accel_mps2: float = 4.0
     max_brake_mps2: float = 6.0
     safety_radius_m: float = 0.15    # wall distance below which we call it a crash
+    # lateral grip limit (mu * g).  inf = the idealised step-2 car that never
+    # slides; step 3 sets the real value from your tire grip coefficient.
+    max_lat_accel_mps2: float = float("inf")
 
 
 @dataclass
@@ -33,12 +36,16 @@ class CarState:
 
 
 def kinematic_step(s: CarState, steer_target: float, accel: float,
-                   p: CarParams, dt: float) -> None:
+                   p: CarParams, dt: float) -> bool:
     """Advance the car state in place by `dt` seconds.
 
     steer_target : desired front wheel angle [rad]; the actual angle slews
                    toward it at steer_rate_rps (servos are not instant)
     accel        : longitudinal acceleration [m/s^2] (negative = braking)
+
+    Returns True if the car exceeded its lateral grip this step.  When that
+    happens the model understeers: yaw rate is clamped to what the tires can
+    actually deliver and some speed is scrubbed off.
     """
     max_delta = p.steer_rate_rps * dt
     s.steer += min(max(steer_target - s.steer, -max_delta), max_delta)
@@ -48,5 +55,16 @@ def kinematic_step(s: CarState, steer_target: float, accel: float,
 
     s.x += s.v * math.cos(s.yaw) * dt
     s.y += s.v * math.sin(s.yaw) * dt
-    s.yaw += s.v / p.wheelbase_m * math.tan(s.steer) * dt
+
+    yaw_rate = s.v / p.wheelbase_m * math.tan(s.steer)
+    sliding = False
+    if s.v > 0.1:
+        max_yaw_rate = p.max_lat_accel_mps2 / s.v   # a_lat = v * yaw_rate
+        if abs(yaw_rate) > max_yaw_rate:
+            yaw_rate = math.copysign(max_yaw_rate, yaw_rate)
+            s.v *= max(0.0, 1.0 - 0.5 * dt)         # sliding scrubs speed
+            sliding = True
+
+    s.yaw += yaw_rate * dt
     s.yaw = (s.yaw + math.pi) % (2.0 * math.pi) - math.pi
+    return sliding

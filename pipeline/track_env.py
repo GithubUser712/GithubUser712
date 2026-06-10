@@ -32,6 +32,7 @@ LAP_BONUS = 100.0
 COLLISION_PENALTY = 50.0
 TIME_PENALTY_PER_STEP = 0.01
 STEER_THRASH_PENALTY = 0.02       # * |change in steering command|
+SLIDE_PENALTY_PER_STEP = 0.05     # exceeded lateral grip (understeering)
 
 
 # ------------------------------------------------------------- track loading
@@ -201,9 +202,10 @@ class TrackEnv(gym.Env):
                             else self.p.max_brake_mps2)
 
         collided = False
+        slid = False
         sub_dt = self.dt / self.substeps
         for _ in range(self.substeps):
-            kinematic_step(self.state, steer_target, accel, self.p, sub_dt)
+            slid |= kinematic_step(self.state, steer_target, accel, self.p, sub_dt)
             if self._dist_at(self.state.x, self.state.y) < self.p.safety_radius_m:
                 collided = True
                 break
@@ -221,6 +223,8 @@ class TrackEnv(gym.Env):
         punish = max(-ds, 0.0) * PROGRESS_REWARD_PER_M
         punish += TIME_PENALTY_PER_STEP
         punish += STEER_THRASH_PENALTY * abs(steer_cmd - self._last_steer_cmd)
+        if slid:
+            punish += SLIDE_PENALTY_PER_STEP
         self._last_steer_cmd = steer_cmd
 
         lap_time = None

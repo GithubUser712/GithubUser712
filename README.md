@@ -8,8 +8,8 @@ Pipeline stages:
 
 1. **Map ingestion** (`pipeline/step1.py`) — implemented
 2. **RL racing line** (`pipeline/step2.py`) — implemented
-3. Vehicle parameters + constrained recompute — planned
-4. Braking / acceleration zone dictation — planned
+3. **Vehicle parameters + recalculation** (`pipeline/step3.py`) — implemented
+4. **Braking / acceleration zones** (`pipeline/step4.py`) — implemented
 5. f1tenth_gym validation + real-car ROS 2 deployment — planned
 
 ## Setup
@@ -73,3 +73,33 @@ Additional outputs in `artifacts/`:
 Note: pip's default `torch` wheel on x86 Linux bundles CUDA and is large; for
 CPU-only training install it first with
 `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+
+## Step 3: car parameters + racing line recalculation
+
+Prompts for the real car's measurements (weight, max/min speed, wheelbase
+width/length, chassis width/length, turning radius, tire grip coefficient),
+derives the physical limits (steering angle, lateral grip, traction-limited
+acceleration, wall margin), bakes them into the simulator, fine-tunes the
+step-2 policy under the new physics and re-extracts the racing line.
+
+```bash
+python -m pipeline.step3                                    # prompts, then trains
+python -m pipeline.step3 --params-file artifacts/car_params.yaml   # no prompts
+```
+
+Outputs: `car_params.yaml`, `rl_policy_tuned.zip`, `raceline_tuned.csv`,
+`raceline_tuned_debug.png`.
+
+## Step 4: braking / acceleration zone dictation
+
+Computes the fastest physically-possible speed at every waypoint
+(curvature cap + friction-circle forward/backward passes), splits the lap
+into ACCEL / BRAKE / HOLD zones, prints the dictation, and writes the final
+trajectory the trackers will follow.
+
+```bash
+python -m pipeline.step4
+```
+
+Outputs: `raceline_final.csv` (`s, x, y, curvature, speed, zone` per
+waypoint), `zones.yaml`, `zones_map.png`, `speed_profile.png`.
