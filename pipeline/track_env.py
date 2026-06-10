@@ -32,6 +32,7 @@ LAP_BONUS = 100.0
 COLLISION_PENALTY = 50.0
 TIME_PENALTY_PER_STEP = 0.01
 STEER_THRASH_PENALTY = 0.02       # * |change in steering command|
+SLIDE_PENALTY_PER_STEP = 0.05     # exceeded lateral grip (understeering)
 
 
 # ------------------------------------------------------------- track loading
@@ -81,7 +82,7 @@ class TrackEnv(gym.Env):
                  n_beams: int = 27, fov_deg: float = 270.0,
                  max_range_m: float = 12.0, dt: float = 0.05,
                  physics_substeps: int = 2, max_steps: int = 3000,
-                 random_spawn: bool = True):
+                 random_spawn: bool = True, laps: int = 1):
         super().__init__()
         self.track = track
         self.p = params or CarParams()
@@ -89,6 +90,7 @@ class TrackEnv(gym.Env):
         self.substeps = physics_substeps
         self.max_steps = max_steps
         self.random_spawn = random_spawn
+        self.laps = laps               # episode ends after this many laps
         self.max_range = max_range_m
         self.beam_angles = np.deg2rad(
             np.linspace(-fov_deg / 2.0, fov_deg / 2.0, n_beams))
@@ -191,6 +193,7 @@ class TrackEnv(gym.Env):
         self._punish_sum = 0.0
         self._last_steer_cmd = 0.0
         self.trajectory = [(x, y)]
+        self.progress_log = [0.0]      # cumulative progress per trajectory point
         return self._observation(), {}
 
     def step(self, action):
@@ -201,9 +204,10 @@ class TrackEnv(gym.Env):
                             else self.p.max_brake_mps2)
 
         collided = False
+        slid = False
         sub_dt = self.dt / self.substeps
         for _ in range(self.substeps):
-            kinematic_step(self.state, steer_target, accel, self.p, sub_dt)
+            slid |= kinematic_step(self.state, steer_target, accel, self.p, sub_dt)
             if self._dist_at(self.state.x, self.state.y) < self.p.safety_radius_m:
                 collided = True
                 break
@@ -214,6 +218,7 @@ class TrackEnv(gym.Env):
         self._last_idx = idx
         self._total_progress += ds
         self.trajectory.append((self.state.x, self.state.y))
+        self.progress_log.append(self._total_progress)
         self._steps += 1
 
         # --- separate reward / punishment bookkeeping --------------------
@@ -221,14 +226,17 @@ class TrackEnv(gym.Env):
         punish = max(-ds, 0.0) * PROGRESS_REWARD_PER_M
         punish += TIME_PENALTY_PER_STEP
         punish += STEER_THRASH_PENALTY * abs(steer_cmd - self._last_steer_cmd)
+        if slid:
+            punish += SLIDE_PENALTY_PER_STEP
         self._last_steer_cmd = steer_cmd
 
         lap_time = None
         terminated = False
+        goal_m = self.laps * self.track.length_m
         if collided:
             punish += COLLISION_PENALTY
             terminated = True
-        elif self._total_progress >= self.track.length_m:
+        elif self._total_progress >= goal_m:
             reward_pos += LAP_BONUS
             lap_time = self._steps * self.dt
             terminated = True
@@ -242,8 +250,7 @@ class TrackEnv(gym.Env):
             info["run_summary"] = {
                 "reward": self._reward_sum,
                 "punishment": self._punish_sum,
-                "progress_pct": 100.0 * max(self._total_progress, 0.0)
-                                / self.track.length_m,
+                "progress_pct": 100.0 * max(self._total_progress, 0.0) / goal_m,
                 "lap_time_s": lap_time,
                 "crashed": collided,
             }

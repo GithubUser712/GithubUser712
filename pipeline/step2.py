@@ -65,11 +65,14 @@ class PingCallback(BaseCallback):
 
 # -------------------------------------------------------- raceline extraction
 
-def best_deterministic_lap(model: PPO, track: TrackData,
+def best_deterministic_lap(model: PPO, track: TrackData, params=None,
                            attempts: int = 5) -> tuple[np.ndarray | None, float]:
     """Roll out the trained policy without exploration noise from the start
-    pose; return the trajectory of the fastest completed lap (or None)."""
-    env = TrackEnv(track, random_spawn=False)
+    pose for TWO laps and return the trajectory of the fastest *flying* lap
+    (the second one).  A standing-start lap has a kink at the start line
+    that would poison the curvature -- and therefore the braking zones.
+    """
+    env = TrackEnv(track, params=params, random_spawn=False, laps=2)
     best_traj, best_time = None, float("inf")
     for i in range(attempts):
         obs, _ = env.reset(seed=i)
@@ -78,12 +81,17 @@ def best_deterministic_lap(model: PPO, track: TrackData,
             obs, _, terminated, truncated, info = env.step(action)
             if terminated or truncated:
                 rs = info["run_summary"]
-                lap = rs["lap_time_s"]
-                print(f"  eval attempt {i + 1}: progress {rs['progress_pct']:.1f}%"
-                      + (f", lap {lap:.2f} s" if lap else ", no lap"))
-                if lap is not None and lap < best_time:
-                    best_time = lap
-                    best_traj = np.array(env.trajectory)
+                done = rs["lap_time_s"] is not None
+                progress = np.asarray(env.progress_log)
+                flying = (progress >= track.length_m) & \
+                         (progress < 2.0 * track.length_m)
+                flying_time = float(flying.sum()) * env.dt
+                print(f"  eval attempt {i + 1}: progress "
+                      f"{rs['progress_pct']:.1f}% of 2 laps"
+                      + (f", flying lap {flying_time:.2f} s" if done else ""))
+                if done and flying_time < best_time:
+                    best_time = flying_time
+                    best_traj = np.asarray(env.trajectory)[flying]
                 break
     return best_traj, best_time
 
@@ -121,8 +129,9 @@ def smooth_raceline(traj: np.ndarray, spacing_m: float) -> np.ndarray:
 
 
 def save_raceline(track: TrackData, raceline: np.ndarray, lap_time: float,
-                  out_dir: Path) -> list[Path]:
-    csv_path = out_dir / "raceline.csv"
+                  out_dir: Path, stem: str = "raceline",
+                  note: str = "generic car parameters") -> list[Path]:
+    csv_path = out_dir / f"{stem}.csv"
     np.savetxt(csv_path, raceline, delimiter=",", fmt="%.4f",
                header="x_m,y_m,curvature_1pm", comments="")
 
@@ -135,11 +144,10 @@ def save_raceline(track: TrackData, raceline: np.ndarray, lap_time: float,
                     cmap="plasma", s=4, label="RL racing line")
     fig.colorbar(sc, ax=ax, fraction=0.04, label="|curvature| (1/m)")
     ax.plot(rpx[0, 1], rpx[0, 0], "r*", markersize=14)
-    ax.set_title(f"Step 2 result: RL racing line (lap {lap_time:.2f} s "
-                 "with generic car parameters)")
+    ax.set_title(f"RL racing line (lap {lap_time:.2f} s with {note})")
     ax.legend(loc="upper right")
     fig.tight_layout()
-    png_path = out_dir / "raceline_debug.png"
+    png_path = out_dir / f"{stem}_debug.png"
     fig.savefig(png_path, dpi=150)
     plt.close(fig)
     return [csv_path, png_path]
