@@ -6,8 +6,8 @@ RC car (Jetson Orin Nano + VESC 6 + RPLidar A2M12, ROS 2 Jazzy).
 
 Pipeline stages:
 
-1. **Map ingestion** (this repo, `pipeline/step1.py`) — implemented
-2. RL racing line — planned
+1. **Map ingestion** (`pipeline/step1.py`) — implemented
+2. **RL racing line** (`pipeline/step2.py`) — implemented
 3. Vehicle parameters + constrained recompute — planned
 4. Braking / acceleration zone dictation — planned
 5. f1tenth_gym validation + real-car ROS 2 deployment — planned
@@ -49,3 +49,27 @@ Outputs in `artifacts/`:
 | `centerline.csv` | ordered waypoints: `x_m, y_m, clearance_m`            |
 | `track_meta.yaml`| resolution, start pose, track length/width statistics |
 | `debug.png`      | visual overlay — check this before trusting the rest  |
+
+## Step 2: RL racing line
+
+Trains a PPO agent (simulated lidar in, steering + throttle out) to lap the
+track, printing one ping per finished run with its rewards and punishments.
+The best deterministic lap is then smoothed into the racing line.
+
+```bash
+python -m pipeline.step2                      # train 1M steps on artifacts/
+python -m pipeline.step2 --resume             # keep training a saved policy
+python -m pipeline.step2 --eval-only          # just re-extract the raceline
+```
+
+Additional outputs in `artifacts/`:
+
+| file                 | contents                                         |
+|----------------------|--------------------------------------------------|
+| `rl_policy.zip`      | trained PPO weights (resumable)                  |
+| `raceline.csv`       | racing line waypoints: `x_m, y_m, curvature_1pm` |
+| `raceline_debug.png` | racing line over the map, coloured by curvature  |
+
+Note: pip's default `torch` wheel on x86 Linux bundles CUDA and is large; for
+CPU-only training install it first with
+`pip install torch --index-url https://download.pytorch.org/whl/cpu`.
