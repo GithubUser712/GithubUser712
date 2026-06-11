@@ -34,11 +34,29 @@ python tools/make_sample_map.py
 python -m pipeline.step1
 ```
 
-Or fully scripted:
+There are also RC-scale (1:10) replicas of real F1 circuits, built from real
+centerline geometry (`maps/sources/*.geojson`, derived from OpenStreetMap via
+the bacinger/f1-circuits dataset). The PNGs are committed; regenerate or
+tweak them with `python tools/make_f1_tracks.py`.
+
+Step-1 parameters per map (start = pixel `x,y` on the start/finish line,
+heading in degrees):
+
+| map                     | `--resolution` | `--start` | `--heading` | RC lap |
+|-------------------------|----------------|-----------|-------------|--------|
+| `maps/sample_track.png` | 0.05           | 873,350   | -72         | 95 m   |
+| `maps/monaco.png`       | 0.05           | 1017,436  | 105         | 333 m  |
+| `maps/spa.png`          | 0.1            | 414,248   | 125         | 700 m  |
+| `maps/nurburgring.png`  | 0.1            | 988,271   | -135        | 515 m  |
+
+For example, Monaco end to end — to train on a different map, give every
+step the same artifacts directory:
 
 ```bash
-python -m pipeline.step1 --map maps/sample_track.png --resolution 0.05 \
-    --start 873,350 --heading -69
+python -m pipeline.step1 --map maps/monaco.png --resolution 0.05 \
+    --start 1017,436 --heading 105 --out artifacts_monaco
+python -m pipeline.step2 --artifacts artifacts_monaco
+python -m pipeline.watch --artifacts artifacts_monaco
 ```
 
 Outputs in `artifacts/`:

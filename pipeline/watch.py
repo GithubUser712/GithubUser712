@@ -45,13 +45,19 @@ _CAR_COLOURS = [(160, 80, 20), (20, 140, 200), (140, 20, 140), (20, 160, 60),
 
 class Viewer:
     def __init__(self, track: TrackData, chassis_l_m: float, chassis_w_m: float,
-                 show_beams: bool):
+                 show_beams: bool, display_px: int = 1100):
         self.track = track
         occ = track.grid.occupancy
         self.bg = np.where(occ[..., None] == 1, _WALL, _FREE).astype(np.uint8)
         self.chassis_l = chassis_l_m
         self.chassis_w = chassis_w_m
         self.show_beams = show_beams
+        # big circuit maps (Spa is 2122 px tall) are downscaled for display;
+        # even dimensions keep video codecs happy
+        h, w = self.bg.shape[:2]
+        self.scale = min(1.0, display_px / max(h, w))
+        self.out_size = (int(w * self.scale) // 2 * 2,
+                         int(h * self.scale) // 2 * 2)
 
     def _to_px(self, xy: np.ndarray) -> np.ndarray:
         """world (x, y) -> opencv (col, row) int points."""
@@ -103,17 +109,22 @@ class Viewer:
                           (cx + w + int(v * (w - 2)), y + h - 2), colour, -1)
 
     def frame(self, envs, obs_list, actions, hud: list, banners) -> np.ndarray:
+        # world at full map resolution...
         img = self.bg.copy()
         for i, (env, obs) in enumerate(zip(envs, obs_list)):
             if obs is not None:
                 self._draw_car(img, env, obs, _CAR_COLOURS[i % len(_CAR_COLOURS)])
+        if img.shape[1] != self.out_size[0]:
+            img = cv2.resize(img, self.out_size, interpolation=cv2.INTER_AREA)
+
+        # ...text and pedals at display resolution so they stay readable
         for text, colour, count in hud:
             cv2.putText(img, text, (10, 22 + 20 * count),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, colour, 1, cv2.LINE_AA)
         for b in banners:
-            cv2.putText(img, b["text"], tuple(b["pos"]),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, b["colour"], 2,
-                        cv2.LINE_AA)
+            pos = (int(b["pos"][0] * self.scale), int(b["pos"][1] * self.scale))
+            cv2.putText(img, b["text"], pos, cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9, b["colour"], 2, cv2.LINE_AA)
         if len(envs) == 1 and actions[0] is not None:
             self._draw_pedals(img, actions[0], img.shape[0] - 64)
         return img
@@ -143,6 +154,8 @@ def main(argv=None) -> int:
                     help="ignore the policy, take random actions")
     ap.add_argument("--show-beams", action="store_true",
                     help="draw lidar beams even with multiple cars")
+    ap.add_argument("--display-width", type=int, default=1100,
+                    help="max window/video dimension in px (default 1100)")
     args = ap.parse_args(argv)
 
     out_dir = Path(args.artifacts)
@@ -160,6 +173,8 @@ def main(argv=None) -> int:
         note = "your car (step 3)"
 
     model = None
+    policy_path = None
+    policy_mtime = 0.0
     if not args.random:
         policy_path = (Path(args.policy) if args.policy else None)
         if policy_path is None:
@@ -167,11 +182,17 @@ def main(argv=None) -> int:
             base = out_dir / "rl_policy.zip"
             policy_path = tuned if tuned.is_file() else base
         if not policy_path.is_file():
-            print(f"ERROR: no policy found at {policy_path} -- train with "
-                  "step 2 first, or pass --random to watch an untrained car.")
-            return 2
+            print(f"No policy at {policy_path} yet -- waiting for training's "
+                  "first autosave (every 50k steps). Ctrl-C to give up.")
+            while not policy_path.is_file():
+                time.sleep(3.0)
         from stable_baselines3 import PPO
-        model = PPO.load(policy_path, device="cpu")
+        while model is None:
+            try:    # training may be mid-write; retry until the zip is whole
+                model = PPO.load(policy_path, device="cpu")
+                policy_mtime = policy_path.stat().st_mtime
+            except Exception:
+                time.sleep(2.0)
         print(f"Watching {policy_path.name} | physics: {note} | "
               f"{args.cars} car(s), {args.laps} lap(s) per run")
     else:
@@ -183,14 +204,15 @@ def main(argv=None) -> int:
     envs = [TrackEnv(track, params=params, random_spawn=random_spawn,
                      laps=args.laps) for _ in range(args.cars)]
     show_beams = args.show_beams or args.cars == 1
-    viewer = Viewer(track, chassis_l, chassis_w, show_beams)
+    viewer = Viewer(track, chassis_l, chassis_w, show_beams,
+                    display_px=args.display_width)
 
     writer = None
     fps = int(round(1.0 / envs[0].dt))
     if args.video:
-        h, w = viewer.bg.shape[:2]
         writer = cv2.VideoWriter(args.video,
-                                 cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+                                 cv2.VideoWriter_fourcc(*"mp4v"), fps,
+                                 viewer.out_size)
         if not writer.isOpened():
             print("ERROR: could not open video writer (codec missing?).")
             return 2
@@ -200,6 +222,10 @@ def main(argv=None) -> int:
         except cv2.error:
             print("ERROR: no display available -- use --video out.mp4 instead.")
             return 2
+        print("live window open. Tips: early-training policies may barely "
+              "move (the picture only crawls) -- try --stochastic "
+              "--random-spawn for livelier runs; if the window NEVER "
+              "repaints on a Wayland desktop, retry with GDK_BACKEND=x11")
 
     obs_list = [env.reset(seed=i)[0] for i, env in enumerate(envs)]
     actions = [None] * args.cars
@@ -209,9 +235,30 @@ def main(argv=None) -> int:
     best_lap = None
     total_runs = 0
     frame_budget_s = envs[0].dt / max(args.speed, 0.01)
+    frame_idx = 0
+    reload_every = int(10.0 / envs[0].dt)      # check for a newer autosave ~10 s
 
     while any(active):
         t0 = time.time()
+        frame_idx += 1
+
+        # hot-reload training's newest autosave and restart the runs with it,
+        # so a stalled early policy doesn't freeze the picture for minutes
+        if model is not None and frame_idx % reload_every == 0:
+            try:
+                mtime = policy_path.stat().st_mtime
+                if mtime > policy_mtime:
+                    from stable_baselines3 import PPO
+                    model = PPO.load(policy_path, device="cpu")
+                    policy_mtime = mtime
+                    print("        ...reloaded latest training autosave, "
+                          "restarting runs")
+                    for i, env in enumerate(envs):
+                        if active[i]:
+                            obs_list[i] = env.reset(
+                                seed=total_runs * args.cars + i + frame_idx)[0]
+            except Exception:
+                pass    # zip mid-write; keep the current model, retry later
         for i, env in enumerate(envs):
             if not active[i]:
                 continue
