@@ -306,11 +306,12 @@ def main(argv=None) -> int:
                 continue
             colour = _CAR_COLOURS[i % len(_CAR_COLOURS)]
             lap_now = env._total_progress / track.length_m
+            slide = "  SLIDE!" if getattr(env, "last_slid", False) else ""
             hud.append((f"car {i + 1}  run {runs[i] + 1}/{args.episodes}  "
                         f"lap {max(lap_now, 0):.2f}/{args.laps}  "
                         f"v {env.state.v:4.1f} m/s  "
                         f"R +{env._reward_sum:7.1f}  "
-                        f"P -{env._punish_sum:6.1f}", colour, len(hud)))
+                        f"P -{env._punish_sum:6.1f}{slide}", colour, len(hud)))
         hud.append((f"best {f'{best_lap:.2f} s' if best_lap else '--'}   "
                     f"runs finished {total_runs}", _HUD, len(hud)))
 

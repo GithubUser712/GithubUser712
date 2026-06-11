@@ -84,7 +84,7 @@ class TrackEnv(gym.Env):
     def __init__(self, track: TrackData, params: CarParams | None = None,
                  n_beams: int = 27, fov_deg: float = 270.0,
                  max_range_m: float = 12.0, dt: float = 0.05,
-                 physics_substeps: int = 2, max_steps: int | None = None,
+                 physics_substeps: int = 4, max_steps: int | None = None,
                  random_spawn: bool = True, laps: int = 1):
         super().__init__()
         self.track = track
@@ -98,8 +98,11 @@ class TrackEnv(gym.Env):
         self.beam_angles = np.deg2rad(
             np.linspace(-fov_deg / 2.0, fov_deg / 2.0, n_beams))
 
-        low = np.concatenate([np.zeros(n_beams), [0.0], [-1.0]]).astype(np.float32)
-        high = np.ones(n_beams + 2, dtype=np.float32)
+        # beams + forward speed + steer + lateral velocity + yaw rate; the
+        # last two let the policy FEEL the car starting to slide or rotate
+        low = np.concatenate([np.zeros(n_beams),
+                              [0.0, -1.0, -1.0, -1.0]]).astype(np.float32)
+        high = np.ones(n_beams + 4, dtype=np.float32)
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
 
@@ -170,6 +173,8 @@ class TrackEnv(gym.Env):
             beams,
             [self.state.v / self.p.max_speed_mps],
             [self.state.steer / self.p.max_steer_rad],
+            [np.clip(self.state.vy / 2.0, -1.0, 1.0)],
+            [np.clip(self.state.r / 8.0, -1.0, 1.0)],
         ]).astype(np.float32)
 
     # ----------------------------------------------------------- gym API
@@ -187,7 +192,8 @@ class TrackEnv(gym.Env):
         else:
             x, y, yaw = self.track.start_pose
             v0 = 0.0
-        self.state = CarState(x=x, y=y, yaw=yaw, v=v0, steer=0.0)
+        self.state = CarState(x=x, y=y, yaw=yaw, vx=v0, steer=0.0)
+        self.last_slid = False
 
         self._last_idx = self._nearest_idx(np.array([x, y]), full_search=True)
         self._total_progress = 0.0
@@ -215,6 +221,7 @@ class TrackEnv(gym.Env):
             if self._dist_at(self.state.x, self.state.y) < self.p.safety_radius_m:
                 collided = True
                 break
+        self.last_slid = slid
 
         pos = np.array([self.state.x, self.state.y])
         idx = self._nearest_idx(pos)
