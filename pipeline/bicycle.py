@@ -14,16 +14,16 @@ from dataclasses import dataclass
 @dataclass
 class CarParams:
     wheelbase_m: float = 0.32        # axle-to-axle length
-    max_speed_mps: float = 5.0
+    max_speed_mps: float = 8.0       # fast enough that corners demand braking
     min_speed_mps: float = 0.0
     max_steer_rad: float = 0.40      # ~23 degrees at the front wheels
     steer_rate_rps: float = 4.0      # how fast the steering can slew
     max_accel_mps2: float = 4.0
     max_brake_mps2: float = 6.0
     safety_radius_m: float = 0.15    # wall distance below which we call it a crash
-    # lateral grip limit (mu * g).  inf = the idealised step-2 car that never
-    # slides; step 3 sets the real value from your tire grip coefficient.
-    max_lat_accel_mps2: float = float("inf")
+    # lateral grip limit (mu * g).  The default ~0.7 mu makes even the generic
+    # car brake for corners; step 3 replaces it with your measured grip.
+    max_lat_accel_mps2: float = 7.0
 
 
 @dataclass

@@ -121,6 +121,8 @@ def main(argv=None) -> int:
     ap.add_argument("--timesteps", type=int, default=600_000,
                     help="fine-tuning budget under the new physics")
     ap.add_argument("--n-envs", type=int, default=4)
+    ap.add_argument("--laps", type=int, default=1,
+                    help="laps per run during training (default 1)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     ap.add_argument("--fresh", action="store_true",
@@ -170,7 +172,7 @@ def main(argv=None) -> int:
             return 2
         model = PPO.load(tuned_policy, device=args.device)
     else:
-        factory = partial(TrackEnv, track, params)
+        factory = partial(TrackEnv, track, params, laps=args.laps)
         vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
         venv = vec_cls([factory for _ in range(args.n_envs)])
 

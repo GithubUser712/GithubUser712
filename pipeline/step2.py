@@ -172,8 +172,8 @@ def save_raceline(track: TrackData, raceline: np.ndarray, lap_time: float,
 
 # --------------------------------------------------------------------- main
 
-def _make_env(track: TrackData) -> TrackEnv:
-    return TrackEnv(track, random_spawn=True)
+def _make_env(track: TrackData, laps: int = 1) -> TrackEnv:
+    return TrackEnv(track, random_spawn=True, laps=laps)
 
 
 def main(argv=None) -> int:
@@ -184,6 +184,8 @@ def main(argv=None) -> int:
     ap.add_argument("--timesteps", type=int, default=1_000_000)
     ap.add_argument("--n-envs", type=int, default=4,
                     help="parallel simulation environments")
+    ap.add_argument("--laps", type=int, default=1,
+                    help="laps per run during training (default 1)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--resume", action="store_true",
                     help="continue training from the saved policy")
@@ -206,7 +208,7 @@ def main(argv=None) -> int:
           f"{len(track.centerline)} waypoints, "
           f"width {2 * track.clearance.min():.2f}-{2 * track.clearance.max():.2f} m")
 
-    factory = partial(_make_env, track)
+    factory = partial(_make_env, track, args.laps)
     if not args.eval_only:
         vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
         venv = vec_cls([factory for _ in range(args.n_envs)])
