@@ -62,7 +62,9 @@ def kinematic_step(s: CarState, steer_target: float, accel: float,
         max_yaw_rate = p.max_lat_accel_mps2 / s.v   # a_lat = v * yaw_rate
         if abs(yaw_rate) > max_yaw_rate:
             yaw_rate = math.copysign(max_yaw_rate, yaw_rate)
-            s.v *= max(0.0, 1.0 - 0.5 * dt)         # sliding scrubs speed
+            # mild scrub only: understeer mostly pushes the car WIDE rather
+            # than slowing it, so the agent must actually brake for corners
+            s.v *= max(0.0, 1.0 - 0.1 * dt)
             sliding = True
 
     s.yaw += yaw_rate * dt

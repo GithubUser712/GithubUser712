@@ -32,7 +32,10 @@ LAP_BONUS = 100.0
 COLLISION_PENALTY = 50.0
 TIME_PENALTY_PER_STEP = 0.01
 STEER_THRASH_PENALTY = 0.02       # * |change in steering command|
-SLIDE_PENALTY_PER_STEP = 0.05     # exceeded lateral grip (understeering)
+# Sliding must cost about what the progress it buys is worth (~0.35/step at
+# full speed): much lower and the agent rides the understeer instead of
+# braking; much higher and it drives timidly far below the grip limit.
+SLIDE_PENALTY_PER_STEP = 0.2
 
 
 # ------------------------------------------------------------- track loading
