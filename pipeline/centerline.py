@@ -43,9 +43,10 @@ def extract_centerline(track: TrackMap, corridor_mask: np.ndarray,
                        spacing_m: float = 0.05,
                        smoothing_m: float | None = None) -> Centerline:
     if smoothing_m is None:
-        # allow the spline to deviate ~2 px from the raw skeleton: enough to
-        # kill the pixel staircase without changing the track shape
-        smoothing_m = 2.0 * track.resolution
+        # allow the spline to deviate ~1 px from the raw skeleton: enough to
+        # kill the pixel staircase; more than that lets the line cut hairpin
+        # apexes and graze the inner wall
+        smoothing_m = track.resolution
 
     skeleton = skeletonize(corridor_mask.astype(bool))
     skeleton = _prune_spurs(skeleton)
@@ -55,6 +56,12 @@ def extract_centerline(track: TrackMap, corridor_mask: np.ndarray,
     raw_xy = track.world_from_pixel(loop_rc)
     points, length_m = _smooth_resample(raw_xy, spacing_m, smoothing_m)
     points = _orient(points, np.asarray(start_xy, dtype=float), heading_rad)
+
+    # smoothing can still cut tight apexes; push offenders back toward the
+    # corridor middle so no waypoint hugs a wall
+    clearance = _sample_clearance(track, points)
+    target = 0.5 * float(np.median(clearance))
+    points = _push_off_walls(track, points, target)
     clearance = _sample_clearance(track, points)
     return Centerline(points=points, clearance=clearance, length_m=length_m)
 
@@ -163,3 +170,25 @@ def _sample_clearance(track: TrackMap, points: np.ndarray) -> np.ndarray:
     r = np.clip(rc[:, 0], 0, rows - 1)
     c = np.clip(rc[:, 1], 0, cols - 1)
     return track.distance_m[r, c]
+
+
+def _push_off_walls(track: TrackMap, points: np.ndarray, target_clear_m: float,
+                    max_iter: int = 30) -> np.ndarray:
+    """Nudge waypoints with clearance below `target_clear_m` along the
+    distance-field gradient (i.e. directly away from the nearest wall)."""
+    grad_r, grad_c = np.gradient(track.distance_m)
+    rows, cols = track.shape
+    pts = points.copy()
+    for _ in range(max_iter):
+        rc = np.rint(track.pixel_from_world(pts)).astype(int)
+        r = np.clip(rc[:, 0], 0, rows - 1)
+        c = np.clip(rc[:, 1], 0, cols - 1)
+        low = track.distance_m[r, c] < target_clear_m
+        if not low.any():
+            break
+        # gradient in world coords: +x is +col, +y is -row
+        g = np.stack([grad_c[r[low], c[low]], -grad_r[r[low], c[low]]], axis=1)
+        norm = np.linalg.norm(g, axis=1, keepdims=True)
+        g = np.divide(g, norm, out=np.zeros_like(g), where=norm > 1e-9)
+        pts[low] += g * track.resolution
+    return pts

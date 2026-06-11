@@ -34,6 +34,24 @@ python tools/make_sample_map.py
 python -m pipeline.step1
 ```
 
+There are also RC-scale (1:10) replicas of real F1 circuits, built from real
+centerline geometry (`maps/sources/*.geojson`, derived from OpenStreetMap via
+the bacinger/f1-circuits dataset):
+
+```bash
+python tools/make_f1_tracks.py            # monaco, spa, nurburgring (GP)
+```
+
+Each prints the exact step-1 command (map, resolution, start, heading) for
+that circuit. To train on a different map, give every step the same
+artifacts directory:
+
+```bash
+python -m pipeline.step1 --map maps/monaco.png ... --out artifacts_monaco
+python -m pipeline.step2 --artifacts artifacts_monaco
+python -m pipeline.watch --artifacts artifacts_monaco
+```
+
 Or fully scripted:
 
 ```bash
