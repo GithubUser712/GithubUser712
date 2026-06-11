@@ -26,7 +26,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from .bicycle import CarParams
-from .step2 import PingCallback, best_deterministic_lap, save_raceline, smooth_raceline
+from .step2 import (AutosaveCallback, PingCallback, best_deterministic_lap,
+                    save_raceline, smooth_raceline)
 from .track_env import TrackData, TrackEnv, load_track_data
 
 G = 9.81
@@ -185,7 +186,10 @@ def main(argv=None) -> int:
                         device=args.device)
         print(f"Recalculating racing line: {args.timesteps:,} timesteps with "
               "your car's physics -- one ping per finished run:\n")
-        model.learn(total_timesteps=args.timesteps, callback=PingCallback())
+        from stable_baselines3.common.callbacks import CallbackList
+        model.learn(total_timesteps=args.timesteps,
+                    callback=CallbackList([PingCallback(),
+                                           AutosaveCallback(tuned_policy)]))
         model.save(tuned_policy)
         venv.close()
         print(f"\nTuned policy saved to {tuned_policy}")

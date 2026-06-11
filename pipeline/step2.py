@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from scipy import interpolate
@@ -33,6 +33,23 @@ from .track_env import TrackData, TrackEnv, load_track_data
 
 
 # ------------------------------------------------------------ terminal pings
+
+class AutosaveCallback(BaseCallback):
+    """Save the policy every `every` timesteps so `python -m pipeline.watch`
+    can show the current driving ability while training is still running."""
+
+    def __init__(self, path: Path, every: int = 50_000):
+        super().__init__()
+        self.path = path
+        self.every = every
+        self._last = 0
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps - self._last >= self.every:
+            self._last = self.num_timesteps
+            self.model.save(self.path)
+        return True
+
 
 class PingCallback(BaseCallback):
     """Print one line per finished run: rewards, punishments, progress."""
@@ -208,7 +225,11 @@ def main(argv=None) -> int:
         print(f"Training PPO for {args.timesteps:,} timesteps on "
               f"{args.n_envs} parallel sims, net on '{model.device}' "
               "-- one ping per finished run:\n")
-        model.learn(total_timesteps=args.timesteps, callback=PingCallback())
+        print("(watch progress anytime from a second terminal: "
+              "python -m pipeline.watch)\n")
+        model.learn(total_timesteps=args.timesteps,
+                    callback=CallbackList([PingCallback(),
+                                           AutosaveCallback(policy_path)]))
         model.save(policy_path)
         venv.close()
         print(f"\nPolicy saved to {policy_path}")
