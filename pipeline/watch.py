@@ -187,11 +187,18 @@ def main(argv=None) -> int:
             while not policy_path.is_file():
                 time.sleep(3.0)
         from stable_baselines3 import PPO
+        failures = 0
         while model is None:
             try:    # training may be mid-write; retry until the zip is whole
                 model = PPO.load(policy_path, device="cpu")
                 policy_mtime = policy_path.stat().st_mtime
             except Exception:
+                failures += 1
+                if failures >= 5:
+                    print(f"ERROR: {policy_path} cannot be loaded -- it was "
+                          "probably trained before a physics/observation "
+                          "upgrade. Retrain (or delete the stale .zip).")
+                    return 2
                 time.sleep(2.0)
         print(f"Watching {policy_path.name} | physics: {note} | "
               f"{args.cars} car(s), {args.laps} lap(s) per run")

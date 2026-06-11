@@ -183,11 +183,20 @@ def main(argv=None) -> int:
         vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
         venv = vec_cls([factory for _ in range(args.n_envs)])
 
-        warm = tuned_policy if tuned_policy.is_file() else base_policy
-        if not args.fresh and warm.is_file():
-            print(f"Warm-starting from {warm} (same network, new physics)")
-            model = PPO.load(warm, env=venv, device=args.device)
-        else:
+        model = None
+        if not args.fresh:
+            for warm in (tuned_policy, base_policy):
+                if not warm.is_file():
+                    continue
+                try:
+                    model = PPO.load(warm, env=venv, device=args.device)
+                    print(f"Warm-starting from {warm} (same network, "
+                          "new physics)")
+                    break
+                except Exception:
+                    print(f"NOTE: {warm.name} is incompatible (saved before "
+                          "a physics/observation upgrade) -- skipping it")
+        if model is None:
             model = PPO("MlpPolicy", venv, seed=args.seed, verbose=0,
                         learning_rate=3e-4, n_steps=1024, batch_size=256,
                         gamma=0.995, gae_lambda=0.95, ent_coef=0.005,

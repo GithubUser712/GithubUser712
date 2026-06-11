@@ -41,15 +41,16 @@ class CarParams:
     max_brake_mps2: float = 6.0
     safety_radius_m: float = 0.15
 
-    # tires & body
-    mu: float = 0.7                  # tire grip coefficient
+    # tires & body -- RC rubber on a clean indoor surface really does grip
+    # at mu ~0.9-1.2; the soft stiffness (B) gives a wide, forgiving peak
+    mu: float = 0.95                 # tire grip coefficient
     mass_kg: float = 3.5
     chassis_l_m: float = 0.50        # used for the yaw inertia estimate
     chassis_w_m: float = 0.30
-    cog_height_m: float = 0.04       # centre-of-gravity height (load transfer)
+    cog_height_m: float = 0.04      # centre-of-gravity height (load transfer)
     yaw_inertia: float | None = None # kg m^2; None = box estimate from chassis
-    pacejka_b: float = 8.0           # tire stiffness factor
-    pacejka_c: float = 1.5           # tire shape factor
+    pacejka_b: float = 6.0           # tire stiffness factor
+    pacejka_c: float = 1.3           # tire shape factor
     cda_m2: float = 0.04             # drag area (0.5 * rho * CdA * v^2)
     crr: float = 0.02                # rolling resistance coefficient
 

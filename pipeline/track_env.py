@@ -30,12 +30,14 @@ from .map_ingestion import TrackMap
 PROGRESS_REWARD_PER_M = 1.0
 LAP_BONUS = 100.0
 COLLISION_PENALTY = 50.0
-TIME_PENALTY_PER_STEP = 0.01
+# Time must be expensive relative to crash risk, or the realistic physics
+# teaches the agent to crawl: at 0.05/step a 100 s lap costs as much as the
+# lap bonus pays, while a quick lap keeps almost all of it.
+TIME_PENALTY_PER_STEP = 0.05
 STEER_THRASH_PENALTY = 0.02       # * |change in steering command|
-# Sliding must cost about what the progress it buys is worth (~0.35/step at
-# full speed): much lower and the agent rides the understeer instead of
-# braking; much higher and it drives timidly far below the grip limit.
-SLIDE_PENALTY_PER_STEP = 0.2
+# With real slip physics, brushing the grip limit is part of fast driving;
+# the penalty discourages sustained sliding without forbidding the limit.
+SLIDE_PENALTY_PER_STEP = 0.1
 
 
 # ------------------------------------------------------------- track loading
