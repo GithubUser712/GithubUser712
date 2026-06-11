@@ -32,7 +32,10 @@ LAP_BONUS = 100.0
 COLLISION_PENALTY = 50.0
 TIME_PENALTY_PER_STEP = 0.01
 STEER_THRASH_PENALTY = 0.02       # * |change in steering command|
-SLIDE_PENALTY_PER_STEP = 0.05     # exceeded lateral grip (understeering)
+# Sliding must cost about what the progress it buys is worth (~0.35/step at
+# full speed): much lower and the agent rides the understeer instead of
+# braking; much higher and it drives timidly far below the grip limit.
+SLIDE_PENALTY_PER_STEP = 0.2
 
 
 # ------------------------------------------------------------- track loading
@@ -81,16 +84,16 @@ class TrackEnv(gym.Env):
     def __init__(self, track: TrackData, params: CarParams | None = None,
                  n_beams: int = 27, fov_deg: float = 270.0,
                  max_range_m: float = 12.0, dt: float = 0.05,
-                 physics_substeps: int = 2, max_steps: int = 3000,
+                 physics_substeps: int = 2, max_steps: int | None = None,
                  random_spawn: bool = True, laps: int = 1):
         super().__init__()
         self.track = track
         self.p = params or CarParams()
         self.dt = dt
         self.substeps = physics_substeps
-        self.max_steps = max_steps
-        self.random_spawn = random_spawn
         self.laps = laps               # episode ends after this many laps
+        self.max_steps = max_steps if max_steps is not None else 3000 * laps
+        self.random_spawn = random_spawn
         self.max_range = max_range_m
         self.beam_angles = np.deg2rad(
             np.linspace(-fov_deg / 2.0, fov_deg / 2.0, n_beams))
@@ -188,6 +191,7 @@ class TrackEnv(gym.Env):
 
         self._last_idx = self._nearest_idx(np.array([x, y]), full_search=True)
         self._total_progress = 0.0
+        self._laps_done = 0
         self._steps = 0
         self._reward_sum = 0.0
         self._punish_sum = 0.0
@@ -236,10 +240,16 @@ class TrackEnv(gym.Env):
         if collided:
             punish += COLLISION_PENALTY
             terminated = True
-        elif self._total_progress >= goal_m:
-            reward_pos += LAP_BONUS
-            lap_time = self._steps * self.dt
-            terminated = True
+        else:
+            # bonus at every lap crossing, not just the last -- keeps the
+            # reward signal dense when running multi-lap episodes
+            laps_now = int(self._total_progress / self.track.length_m)
+            if laps_now > self._laps_done:
+                reward_pos += LAP_BONUS * (laps_now - self._laps_done)
+                self._laps_done = laps_now
+                if self._laps_done >= self.laps:
+                    lap_time = self._steps * self.dt
+                    terminated = True
         truncated = self._steps >= self.max_steps
 
         self._reward_sum += reward_pos
@@ -252,6 +262,7 @@ class TrackEnv(gym.Env):
                 "punishment": self._punish_sum,
                 "progress_pct": 100.0 * max(self._total_progress, 0.0) / goal_m,
                 "lap_time_s": lap_time,
+                "laps_done": self._laps_done,
                 "crashed": collided,
             }
 

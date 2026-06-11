@@ -74,6 +74,26 @@ Note: pip's default `torch` wheel on x86 Linux bundles CUDA and is large; for
 CPU-only training install it first with
 `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
 
+### Watching the attempts
+
+```bash
+python -m pipeline.watch                    # live window (run anytime, even
+                                            #   while training -- the policy
+                                            #   autosaves every 50k steps)
+python -m pipeline.watch --laps 3           # 3-lap runs
+python -m pipeline.watch --cars 4           # 4 cars at the same time
+python -m pipeline.watch --video runs.mp4   # record an MP4 (headless OK)
+python -m pipeline.watch --stochastic --random-spawn   # training-style runs
+python -m pipeline.watch --random           # untrained baseline
+```
+
+`--laps` also works on `step2`/`step3` training (laps per training run, with
+a bonus at every lap crossing).
+
+Renders the map, the car to scale, its lidar beams, the driven path, and a
+HUD with the run's rewards/punishments; ends with a LAP / CRASH banner.
+Press `q` or `Esc` to quit the live window.
+
 ## Step 3: car parameters + racing line recalculation
 
 Prompts for the real car's measurements (weight, max/min speed, wheelbase
