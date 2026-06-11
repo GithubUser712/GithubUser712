@@ -160,6 +160,8 @@ def main(argv=None) -> int:
         note = "your car (step 3)"
 
     model = None
+    policy_path = None
+    policy_mtime = 0.0
     if not args.random:
         policy_path = (Path(args.policy) if args.policy else None)
         if policy_path is None:
@@ -167,11 +169,17 @@ def main(argv=None) -> int:
             base = out_dir / "rl_policy.zip"
             policy_path = tuned if tuned.is_file() else base
         if not policy_path.is_file():
-            print(f"ERROR: no policy found at {policy_path} -- train with "
-                  "step 2 first, or pass --random to watch an untrained car.")
-            return 2
+            print(f"No policy at {policy_path} yet -- waiting for training's "
+                  "first autosave (every 50k steps). Ctrl-C to give up.")
+            while not policy_path.is_file():
+                time.sleep(3.0)
         from stable_baselines3 import PPO
-        model = PPO.load(policy_path, device="cpu")
+        while model is None:
+            try:    # training may be mid-write; retry until the zip is whole
+                model = PPO.load(policy_path, device="cpu")
+                policy_mtime = policy_path.stat().st_mtime
+            except Exception:
+                time.sleep(2.0)
         print(f"Watching {policy_path.name} | physics: {note} | "
               f"{args.cars} car(s), {args.laps} lap(s) per run")
     else:
@@ -251,6 +259,18 @@ def main(argv=None) -> int:
                     obs_list[i] = None
                 else:
                     obs_list[i] = env.reset(seed=total_runs * args.cars + i)[0]
+
+                # pick up training's latest autosave between runs
+                if model is not None:
+                    try:
+                        mtime = policy_path.stat().st_mtime
+                        if mtime > policy_mtime:
+                            from stable_baselines3 import PPO
+                            model = PPO.load(policy_path, device="cpu")
+                            policy_mtime = mtime
+                            print("        ...reloaded latest training autosave")
+                    except Exception:
+                        pass    # mid-write; keep the current model, retry later
 
         # HUD: one line per car (first 8), then a global line
         hud = []
