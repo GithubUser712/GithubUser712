@@ -90,6 +90,12 @@ def best_deterministic_lap(model: PPO, track: TrackData, params=None,
     that would poison the curvature -- and therefore the braking zones.
     """
     env = TrackEnv(track, params=params, random_spawn=False, laps=2)
+    if model.observation_space.shape != env.observation_space.shape:
+        raise SystemExit(
+            f"ERROR: this policy expects observations "
+            f"{model.observation_space.shape} but the simulator produces "
+            f"{env.observation_space.shape} -- it was trained before an "
+            "upgrade. Retrain (step 2, then step 3) and try again.")
     best_traj, best_time = None, float("inf")
     for i in range(attempts):
         obs, _ = env.reset(seed=i)
@@ -215,7 +221,13 @@ def main(argv=None) -> int:
 
         if args.resume and policy_path.is_file():
             print(f"Resuming training from {policy_path}\n")
-            model = PPO.load(policy_path, env=venv, device=args.device)
+            try:
+                model = PPO.load(policy_path, env=venv, device=args.device)
+            except Exception:
+                print(f"ERROR: {policy_path} is incompatible with the current "
+                      "simulator (trained before an upgrade) -- run without "
+                      "--resume to train fresh.")
+                return 2
         else:
             model = PPO(
                 "MlpPolicy", venv, seed=args.seed, verbose=0,

@@ -172,37 +172,62 @@ def main(argv=None) -> int:
         chassis_w = measured["chassis_width_m"]
         note = "your car (step 3)"
 
-    model = None
-    policy_path = None
-    policy_mtime = 0.0
-    if not args.random:
-        policy_path = (Path(args.policy) if args.policy else None)
-        if policy_path is None:
-            tuned = out_dir / "rl_policy_tuned.zip"
-            base = out_dir / "rl_policy.zip"
-            policy_path = tuned if tuned.is_file() else base
-        if not policy_path.is_file():
-            print(f"No policy at {policy_path} yet -- waiting for training's "
-                  "first autosave (every 50k steps). Ctrl-C to give up.")
-            while not policy_path.is_file():
-                time.sleep(3.0)
-        from stable_baselines3 import PPO
-        while model is None:
-            try:    # training may be mid-write; retry until the zip is whole
-                model = PPO.load(policy_path, device="cpu")
-                policy_mtime = policy_path.stat().st_mtime
-            except Exception:
-                time.sleep(2.0)
-        print(f"Watching {policy_path.name} | physics: {note} | "
-              f"{args.cars} car(s), {args.laps} lap(s) per run")
-    else:
-        print(f"Watching RANDOM actions | physics: {note}")
-
     # with several cars from the same fixed start they'd all drive the exact
     # same line; spread them around the track instead
     random_spawn = args.random_spawn or args.cars > 1
     envs = [TrackEnv(track, params=params, random_spawn=random_spawn,
                      laps=args.laps) for _ in range(args.cars)]
+    obs_shape = envs[0].observation_space.shape
+
+    def _try_load(path: Path, retries: int = 3):
+        """Load a policy if it exists, is readable, and matches the env."""
+        from stable_baselines3 import PPO
+        for attempt in range(retries):
+            if not path.is_file():
+                return None
+            try:
+                candidate = PPO.load(path, device="cpu")
+            except Exception:       # training may be mid-write
+                if attempt + 1 < retries:
+                    time.sleep(2.0)
+                continue
+            if candidate.observation_space.shape != obs_shape:
+                print(f"NOTE: {path.name} expects observations "
+                      f"{candidate.observation_space.shape}, the simulator "
+                      f"produces {obs_shape} -- it predates an upgrade, "
+                      "skipping it")
+                return None
+            return candidate
+        return None
+
+    model = None
+    policy_path = None
+    policy_mtime = 0.0
+    if not args.random:
+        candidates = ([Path(args.policy)] if args.policy else
+                      [out_dir / "rl_policy_tuned.zip",
+                       out_dir / "rl_policy.zip"])
+        waiting_msg_shown = False
+        while model is None:
+            for cand in candidates:
+                model = _try_load(cand)
+                if model is not None:
+                    policy_path = cand
+                    policy_mtime = cand.stat().st_mtime
+                    break
+            if model is None:
+                if not waiting_msg_shown:
+                    print("No usable policy yet -- waiting for training's "
+                          "next autosave (every 50k steps). If you are NOT "
+                          "training right now, retrain with step 2 (stale "
+                          "pre-upgrade policies cannot be watched). "
+                          "Ctrl-C to give up.")
+                    waiting_msg_shown = True
+                time.sleep(5.0)
+        print(f"Watching {policy_path.name} | physics: {note} | "
+              f"{args.cars} car(s), {args.laps} lap(s) per run")
+    else:
+        print(f"Watching RANDOM actions | physics: {note}")
     show_beams = args.show_beams or args.cars == 1
     viewer = Viewer(track, chassis_l, chassis_w, show_beams,
                     display_px=args.display_width)
@@ -247,9 +272,12 @@ def main(argv=None) -> int:
         if model is not None and frame_idx % reload_every == 0:
             try:
                 mtime = policy_path.stat().st_mtime
-                if mtime > policy_mtime:
-                    from stable_baselines3 import PPO
-                    model = PPO.load(policy_path, device="cpu")
+            except OSError:
+                mtime = policy_mtime
+            if mtime > policy_mtime:
+                fresh = _try_load(policy_path, retries=1)
+                if fresh is not None:
+                    model = fresh
                     policy_mtime = mtime
                     print("        ...reloaded latest training autosave, "
                           "restarting runs")
@@ -257,8 +285,6 @@ def main(argv=None) -> int:
                         if active[i]:
                             obs_list[i] = env.reset(
                                 seed=total_runs * args.cars + i + frame_idx)[0]
-            except Exception:
-                pass    # zip mid-write; keep the current model, retry later
         for i, env in enumerate(envs):
             if not active[i]:
                 continue
@@ -306,11 +332,12 @@ def main(argv=None) -> int:
                 continue
             colour = _CAR_COLOURS[i % len(_CAR_COLOURS)]
             lap_now = env._total_progress / track.length_m
+            slide = "  SLIDE!" if getattr(env, "last_slid", False) else ""
             hud.append((f"car {i + 1}  run {runs[i] + 1}/{args.episodes}  "
                         f"lap {max(lap_now, 0):.2f}/{args.laps}  "
                         f"v {env.state.v:4.1f} m/s  "
                         f"R +{env._reward_sum:7.1f}  "
-                        f"P -{env._punish_sum:6.1f}", colour, len(hud)))
+                        f"P -{env._punish_sum:6.1f}{slide}", colour, len(hud)))
         hud.append((f"best {f'{best_lap:.2f} s' if best_lap else '--'}   "
                     f"runs finished {total_runs}", _HUD, len(hud)))
 

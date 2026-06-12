@@ -73,34 +73,41 @@ def prompt_measurements() -> dict:
 
 
 def derive_params(m: dict) -> tuple[CarParams, dict]:
-    """Turn tape-measure quantities into simulator limits.
+    """Turn tape-measure quantities into dynamic-model parameters.
 
     max steering angle : bicycle geometry, R = L / tan(delta)
-    lateral grip       : a_lat <= mu * g   (mass cancels: F = mu*m*g = m*a)
-    accel / brake caps : traction-limited, also mu * g
+    accel / brake caps : traction-limited (mu * g); the dynamic model then
+                         further limits them through per-axle traction circles
     wall safety radius : half the chassis width + 5 cm margin, since the
                          distance field measures from the car's centre point
+    yaw inertia        : box estimate from mass and chassis dimensions
     """
     max_steer = math.atan(m["wheelbase_length_m"] / m["turning_radius_m"])
     a_grip = m["tire_grip_mu"] * G
-    derived = {
-        "max_steer_rad": round(max_steer, 4),
-        "max_steer_deg": round(math.degrees(max_steer), 1),
-        "max_lat_accel_mps2": round(a_grip, 3),
-        "max_accel_mps2": round(a_grip, 3),
-        "max_brake_mps2": round(a_grip, 3),
-        "safety_radius_m": round(m["chassis_width_m"] / 2.0 + 0.05, 3),
-    }
     params = CarParams(
         wheelbase_m=m["wheelbase_length_m"],
         max_speed_mps=m["max_speed_mps"],
         min_speed_mps=m["min_speed_mps"],
-        max_steer_rad=derived["max_steer_rad"],
-        max_accel_mps2=derived["max_accel_mps2"],
-        max_brake_mps2=derived["max_brake_mps2"],
-        safety_radius_m=derived["safety_radius_m"],
-        max_lat_accel_mps2=derived["max_lat_accel_mps2"],
+        max_steer_rad=max_steer,
+        max_accel_mps2=a_grip,
+        max_brake_mps2=a_grip,
+        safety_radius_m=m["chassis_width_m"] / 2.0 + 0.05,
+        mu=m["tire_grip_mu"],
+        mass_kg=m["mass_kg"],
+        chassis_l_m=m["chassis_length_m"],
+        chassis_w_m=m["chassis_width_m"],
     )
+    derived = {
+        "max_steer_rad": round(max_steer, 4),
+        "max_steer_deg": round(math.degrees(max_steer), 1),
+        "max_accel_mps2": round(a_grip, 3),
+        "max_brake_mps2": round(a_grip, 3),
+        "safety_radius_m": round(params.safety_radius_m, 3),
+        "yaw_inertia_kgm2": round(params.izz, 4),
+        "mass_kg": m["mass_kg"],
+        "cda_m2": params.cda_m2,
+        "crr": params.crr,
+    }
     return params, derived
 
 
@@ -143,17 +150,17 @@ def main(argv=None) -> int:
         measured = prompt_measurements()
         params, derived = derive_params(measured)
 
-    print("\nDerived physical limits:")
+    print("\nDerived physical limits (dynamic single-track model):")
     print(f"  max steering angle : {derived['max_steer_deg']:.1f} deg "
           f"(from {measured['turning_radius_m']} m turning radius)")
-    print(f"  lateral grip       : {derived['max_lat_accel_mps2']:.2f} m/s^2 "
-          f"(mu = {measured['tire_grip_mu']})")
     print(f"  accel/brake cap    : {derived['max_accel_mps2']:.2f} m/s^2 "
-          "(traction-limited)")
+          f"(traction-limited, mu = {measured['tire_grip_mu']})")
     print(f"  wall safety radius : {derived['safety_radius_m']:.3f} m "
           f"(chassis width {measured['chassis_width_m']} m + margin)")
-    print("  note: weight cancels out of grip physics (F = mu*m*g = m*a); "
-          "it is saved for the motor/VESC stages.\n")
+    print(f"  yaw inertia        : {derived['yaw_inertia_kgm2']:.4f} kg m^2 "
+          f"(from {measured['mass_kg']} kg + chassis dimensions)")
+    print("  weight now matters: load transfer shifts grip between axles "
+          "under braking/acceleration.\n")
 
     params_path = out_dir / "car_params.yaml"
     with open(params_path, "w") as f:
@@ -176,11 +183,20 @@ def main(argv=None) -> int:
         vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
         venv = vec_cls([factory for _ in range(args.n_envs)])
 
-        warm = tuned_policy if tuned_policy.is_file() else base_policy
-        if not args.fresh and warm.is_file():
-            print(f"Warm-starting from {warm} (same network, new physics)")
-            model = PPO.load(warm, env=venv, device=args.device)
-        else:
+        model = None
+        if not args.fresh:
+            for warm in (tuned_policy, base_policy):
+                if not warm.is_file():
+                    continue
+                try:
+                    model = PPO.load(warm, env=venv, device=args.device)
+                    print(f"Warm-starting from {warm} (same network, "
+                          "new physics)")
+                    break
+                except Exception:
+                    print(f"NOTE: {warm.name} is incompatible (saved before "
+                          "a physics/observation upgrade) -- skipping it")
+        if model is None:
             model = PPO("MlpPolicy", venv, seed=args.seed, verbose=0,
                         learning_rate=3e-4, n_steps=1024, batch_size=256,
                         gamma=0.995, gae_lambda=0.95, ent_coef=0.005,

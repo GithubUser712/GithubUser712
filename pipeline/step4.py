@@ -43,28 +43,34 @@ _DV_EPS = 0.005           # m/s change per waypoint below which speed is "held"
 
 def velocity_profile(curvature: np.ndarray, ds: float, mu: float,
                      v_max: float, v_min: float, a_accel: float,
-                     a_brake: float) -> tuple[np.ndarray, int]:
+                     a_brake: float, mass_kg: float = 3.5,
+                     cda_m2: float = 0.04, crr: float = 0.02
+                     ) -> tuple[np.ndarray, int]:
     """Fastest speed at each waypoint of the closed loop (forward-backward
-    passes with a friction circle).  Returns (speeds, n_grip_violations)."""
+    passes with a friction circle, drag and rolling resistance).
+    Returns (speeds, n_grip_violations)."""
     a_lat_max = mu * G
     k = np.maximum(np.abs(curvature), 1e-6)
     v = np.minimum(np.sqrt(a_lat_max / k), v_max)
     n = len(v)
 
-    def long_accel_available(v_here: float, k_here: float, a_cap: float) -> float:
+    def friction_circle(v_here: float, k_here: float, a_cap: float) -> float:
         ay_frac = min((v_here**2 * k_here) / a_lat_max, 1.0)
         return a_cap * np.sqrt(max(1.0 - ay_frac**2, 0.0))
+
+    def resistive_decel(v_here: float) -> float:
+        return (0.5 * 1.2 * cda_m2 * v_here**2 + crr * mass_kg * G) / mass_kg
 
     # The track is a loop, so each pass runs twice around: the second lap
     # propagates constraints across the seam at index 0.
     for _ in range(2):
         for i in range(2 * n):                       # forward: accel limits
             j, jn = i % n, (i + 1) % n
-            ax = long_accel_available(v[j], k[j], a_accel)
-            v[jn] = min(v[jn], np.sqrt(v[j]**2 + 2.0 * ax * ds))
+            ax = friction_circle(v[j], k[j], a_accel) - resistive_decel(v[j])
+            v[jn] = min(v[jn], np.sqrt(max(v[j]**2 + 2.0 * ax * ds, 0.0)))
         for i in range(2 * n, 0, -1):                # backward: brake limits
             j, jp = i % n, (i - 1) % n
-            ax = long_accel_available(v[j], k[j], a_brake)
+            ax = friction_circle(v[j], k[j], a_brake) + resistive_decel(v[j])
             v[jp] = min(v[jp], np.sqrt(v[j]**2 + 2.0 * ax * ds))
 
     violations = int(np.sum(v < v_min))
@@ -195,6 +201,9 @@ def main(argv=None) -> int:
     v_min = cp["measured"]["min_speed_mps"]
     a_acc = cp["derived"]["max_accel_mps2"]
     a_brk = cp["derived"]["max_brake_mps2"]
+    mass = cp["derived"].get("mass_kg", 3.5)
+    cda = cp["derived"].get("cda_m2", 0.04)
+    crr = cp["derived"].get("crr", 0.02)
 
     raceline_path = out_dir / "raceline_tuned.csv"
     if not raceline_path.is_file():
@@ -213,7 +222,7 @@ def main(argv=None) -> int:
           f"({raceline_path.name})")
 
     speeds, violations = velocity_profile(curvature, ds, mu, v_max, v_min,
-                                          a_acc, a_brk)
+                                          a_acc, a_brk, mass, cda, crr)
     if violations:
         print(f"WARN: min speed ({v_min} m/s) exceeds the grip limit at "
               f"{violations} waypoints -- the car may slide there.")
