@@ -7,3 +7,4 @@ PyYAML>=6.0
 gymnasium>=0.29
 stable-baselines3>=2.3
 torch>=2.2
+pyserial>=3.5

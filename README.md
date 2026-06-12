@@ -10,7 +10,9 @@ Pipeline stages:
 2. **RL racing line** (`pipeline/step2.py`) — implemented
 3. **Vehicle parameters + recalculation** (`pipeline/step3.py`) — implemented
 4. **Braking / acceleration zones** (`pipeline/step4.py`) — implemented
-5. f1tenth_gym validation + real-car ROS 2 deployment — planned
+5. **Raceline tracking validation** (`pipeline/step5.py`) — implemented
+6. **VESC hardware link + bench tools** (`car/`) — implemented
+7. Lidar localization + full autonomous laps — planned
 
 ## Setup
 
@@ -141,3 +143,32 @@ python -m pipeline.step4
 
 Outputs: `raceline_final.csv` (`s, x, y, curvature, speed, zone` per
 waypoint), `zones.yaml`, `zones_map.png`, `speed_profile.png`.
+
+## Step 5: raceline tracking validation
+
+Follows `raceline_final.csv` with a pure-pursuit controller + speed P-control
+in the dynamic simulator — the same controller that later drives the real
+car. Reports lap splits, cross-track error and speed error.
+
+```bash
+python -m pipeline.step5 --laps 3
+python -m pipeline.step5 --speed-scale 0.7      # careful-mode preview
+```
+
+## Step 6: VESC hardware link (Flipsky 75100 Pro V2 or any VESC)
+
+`car/vesc_uart.py` is a dependency-light VESC UART driver (pyserial only);
+`car/bench.py` is the interactive bring-up tool:
+
+```bash
+python -m car.bench --port /dev/ttyACM0
+```
+
+Menu: telemetry, gentle motor spin test (wheels off!), steering servo trim,
+ERPM-per-(m/s) drive-ratio calibration, keyboard teleop with a dead-man
+stop, and saving everything to `car_link.yaml`.
+
+VESC Tool prerequisites (once): run the FOC motor wizard (sensored), set
+battery cutoffs and current limits, cap ERPM, enable Servo Output on the
+PPM pin, and set App to Use = UART (baud 115200). Note: the Flipsky 75100
+requires a **4S+ battery (>= 14 V)** — a 3S pack is below its minimum.
