@@ -65,9 +65,17 @@ def load_track_map(path: str | Path, resolution: float, wall_threshold: int = 12
     tolerant of anti-aliased drawings, JPEG noise and SLAM-generated maps.
     """
     path = Path(path).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"could not find map image: {path}\n"
+            "  For the built-in test track run:\n"
+            "    python -m pipeline.step1 --preset sample")
     img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if img is None:
-        raise FileNotFoundError(f"could not read image: {path}")
+        raise FileNotFoundError(
+            f"OpenCV could not decode image: {path}\n"
+            "  Check the file is a valid PNG/JPG and opencv is installed:\n"
+            "    pip install opencv-python-headless")
     if resolution <= 0.0:
         raise ValueError(f"resolution must be > 0 (got {resolution})")
     occupancy = np.where(img < wall_threshold, WALL, FREE).astype(np.uint8)

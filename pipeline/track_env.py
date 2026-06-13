@@ -24,6 +24,7 @@ import yaml
 from gymnasium import spaces
 
 from .bicycle import CarParams, CarState, kinematic_step
+from raceline.physics import StepDiagnostics
 from .map_ingestion import TrackMap
 
 # ----------------------------------------------------------- reward weights
@@ -219,7 +220,9 @@ class TrackEnv(gym.Env):
         slid = False
         sub_dt = self.dt / self.substeps
         for _ in range(self.substeps):
-            slid |= kinematic_step(self.state, steer_target, accel, self.p, sub_dt)
+            diag: StepDiagnostics = kinematic_step(
+                self.state, steer_target, accel, self.p, sub_dt)
+            slid |= diag.sliding
             if self._dist_at(self.state.x, self.state.y) < self.p.safety_radius_m:
                 collided = True
                 break

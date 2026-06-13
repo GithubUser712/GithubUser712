@@ -1,0 +1,28 @@
+# Default F1TENTH-scale vehicle parameters (SI units).
+# Override in step 3 or pass --params-file to the pipeline.
+
+measured:
+  mass_kg: 3.5
+  max_speed_mps: 8.0
+  min_speed_mps: 0.0
+  wheelbase_width_m: 0.26
+  wheelbase_length_m: 0.32
+  chassis_width_m: 0.30
+  chassis_length_m: 0.50
+  turning_radius_m: 0.75
+  tire_grip_mu: 0.95
+
+physics:
+  use_motor_dynamics: true
+  steer_tau_s: 0.05
+  pacejka_b: 10.0
+  pacejka_c: 1.9
+  pacejka_e: 0.97
+
+motor:
+  pole_pairs: 7
+  gear_ratio: 3.0
+  wheel_radius_m: 0.05
+  max_current_a: 40.0
+  max_erpm: 100000.0
+  torque_constant_nm_per_a: 0.02

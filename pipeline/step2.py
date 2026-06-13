@@ -29,6 +29,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from scipy import interpolate
 
+from raceline.core import PreflightError, check_step_prerequisites
 from .track_env import TrackData, TrackEnv, load_track_data
 
 
@@ -207,7 +208,11 @@ def main(argv=None) -> int:
     print(f"torch {torch.__version__} | CUDA available: {cuda}"
           + (f" ({torch.cuda.get_device_name(0)})" if cuda else ""))
 
-    out_dir = Path(args.artifacts)
+    try:
+        out_dir = check_step_prerequisites(2, args.artifacts)
+    except PreflightError as exc:
+        print(f"ERROR: {exc}")
+        return 2
     policy_path = out_dir / "rl_policy.zip"
     track = load_track_data(out_dir)
     print(f"Track loaded: {track.length_m:.1f} m loop, "

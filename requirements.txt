@@ -8,3 +8,4 @@ gymnasium>=0.29
 stable-baselines3>=2.3
 torch>=2.2
 pyserial>=3.5
+pytest>=8.0

@@ -30,6 +30,7 @@ import numpy as np
 import yaml
 
 from .step3 import G
+from raceline.core import PreflightError, check_step_prerequisites
 from .track_env import load_track_data
 
 ZONE_ACCEL = "ACCEL"
@@ -186,7 +187,11 @@ def main(argv=None) -> int:
                          "speed cap without retraining)")
     args = ap.parse_args(argv)
 
-    out_dir = Path(args.artifacts)
+    try:
+        out_dir = check_step_prerequisites(4, args.artifacts)
+    except PreflightError as exc:
+        print(f"ERROR: {exc}")
+        return 2
     track = load_track_data(out_dir)
 
     params_path = Path(args.params_file) if args.params_file \

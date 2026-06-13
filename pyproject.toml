@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raceline"
+version = "2.0.0"
+description = "Self-driving RC car raceline pipeline with high-fidelity physics"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "scipy>=1.11",
+    "scikit-image>=0.22",
+    "matplotlib>=3.8",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=4.0"]
+rl = ["gymnasium>=0.29", "stable-baselines3>=2.3", "torch>=2.2", "pyserial>=3.5"]
+
+[tool.setuptools.packages.find]
+include = ["raceline*", "pipeline*", "car*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

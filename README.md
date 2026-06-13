@@ -1,174 +1,173 @@
-# Self-Driving RC Car — Raceline Pipeline
+# Self-Driving RC Car — Raceline Pipeline v2
 
 Offline pipeline that turns a hand-drawn (or SLAM-generated) track image into
 an optimal racing line with braking/acceleration zones for an F1TENTH-style
 RC car (Jetson Orin Nano + VESC 6 + RPLidar A2M12, ROS 2 Jazzy).
 
-Pipeline stages:
+## Jetson Orin Nano — start here
 
-1. **Map ingestion** (`pipeline/step1.py`) — implemented
-2. **RL racing line** (`pipeline/step2.py`) — implemented
-3. **Vehicle parameters + recalculation** (`pipeline/step3.py`) — implemented
-4. **Braking / acceleration zones** (`pipeline/step4.py`) — implemented
-5. **Raceline tracking validation** (`pipeline/step5.py`) — implemented
-6. **VESC hardware link + bench tools** (`car/`) — implemented
-7. Lidar localization + full autonomous laps — planned
+**Step 0 (setup, one time):**
+```bash
+git clone https://github.com/GithubUser712/GithubUser712.git
+cd GithubUser712
+git checkout cursor/step5-6-vesc-3d48    # main branch has no code yet
+bash scripts/jetson_setup.sh
+```
 
-## Setup
+**Step 1 (map ingestion, one command):**
+```bash
+source .venv/bin/activate
+python -m pipeline.step1 --preset sample
+```
+
+Or use the wrapper script:
+```bash
+bash scripts/run_step1.sh
+```
+
+Verify setup anytime:
+```bash
+python -m raceline.setup --verify
+```
+
+**Before step 2 (RL training)** install the heavy ML packages:
+```bash
+bash scripts/jetson_install_rl.sh
+```
+
+---
+
+## Project layout
+
+```
+raceline/              Core library (physics, validation, Gazebo export)
+  core/                Preflight checks, typed errors
+  physics/             Pacejka tires, VESC motor, RK4 vehicle model
+  control/             Pure pursuit tracker
+  gazebo/              SDF world export from artifacts
+pipeline/              CLI entry points (steps 1–5) — unchanged interface
+car/                   VESC bench tools (step 6)
+ros2/raceline_gazebo/  3D Gazebo Harmonic simulation package
+tools/                 Map generators, Gazebo export script
+config/                Default vehicle parameters
+tests/                 Unit tests (pytest)
+maps/                  Track images + F1 circuit GeoJSON sources
+```
+
+## Pipeline stages
+
+| Step | Module | Status |
+|------|--------|--------|
+| 1 | `pipeline/step1.py` | Map ingestion |
+| 2 | `pipeline/step2.py` | RL racing line (PPO) |
+| 3 | `pipeline/step3.py` | Car parameters + physics retune |
+| 4 | `pipeline/step4.py` | Braking / acceleration zones |
+| 5 | `pipeline/step5.py` | Pure pursuit validation |
+| 6 | `car/bench.py` | VESC hardware bring-up |
+| 7 | Lidar + ROS 2 autonomy | Planned |
+
+Every step runs **preflight checks** before starting — missing artifacts produce
+a clear error with the exact command to run next.
+
+## Setup (non-Jetson / manual)
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements-step1.txt
+pip install -e . --no-deps
+python -m raceline.setup --verify
 ```
 
-## Step 1: map ingestion
+For RL training (step 2+): `pip install -e ".[rl]"` or `pip install -e ".[dev]"`.
 
-Map format: **black (dark) pixels = 1 = walls, white (light) pixels = 0 = free
-space**. The track must be a single closed loop (closed outer wall, closed
-inner wall).
-
-Generate a test map, then run step 1 (interactive — it prompts for anything
-you don't pass as a flag):
+## Quick start
 
 ```bash
-python tools/make_sample_map.py
-python -m pipeline.step1
-```
-
-There are also RC-scale (1:10) replicas of real F1 circuits, built from real
-centerline geometry (`maps/sources/*.geojson`, derived from OpenStreetMap via
-the bacinger/f1-circuits dataset). The PNGs are committed; regenerate or
-tweak them with `python tools/make_f1_tracks.py`.
-
-Step-1 parameters per map (start = pixel `x,y` on the start/finish line,
-heading in degrees):
-
-| map                     | `--resolution` | `--start` | `--heading` | RC lap |
-|-------------------------|----------------|-----------|-------------|--------|
-| `maps/sample_track.png` | 0.05           | 873,350   | -72         | 95 m   |
-| `maps/monaco.png`       | 0.05           | 1017,436  | 105         | 333 m  |
-| `maps/spa.png`          | 0.1            | 414,248   | 125         | 700 m  |
-| `maps/nurburgring.png`  | 0.1            | 988,271   | -135        | 515 m  |
-
-For example, Monaco end to end — to train on a different map, give every
-step the same artifacts directory:
-
-```bash
-python -m pipeline.step1 --map maps/monaco.png --resolution 0.05 \
-    --start 1017,436 --heading 105 --out artifacts_monaco
-python -m pipeline.step2 --artifacts artifacts_monaco
-python -m pipeline.watch --artifacts artifacts_monaco
-```
-
-Outputs in `artifacts/`:
-
-| file             | contents                                              |
-|------------------|-------------------------------------------------------|
-| `map.pgm/.yaml`  | occupancy grid, ROS map_server / f1tenth_gym format   |
-| `centerline.csv` | ordered waypoints: `x_m, y_m, clearance_m`            |
-| `track_meta.yaml`| resolution, start pose, track length/width statistics |
-| `debug.png`      | visual overlay — check this before trusting the rest  |
-
-## Step 2: RL racing line
-
-Trains a PPO agent (simulated lidar in, steering + throttle out) to lap the
-track, printing one ping per finished run with its rewards and punishments.
-The best deterministic lap is then smoothed into the racing line.
-
-```bash
-python -m pipeline.step2                      # train 1M steps on artifacts/
-python -m pipeline.step2 --resume             # keep training a saved policy
-python -m pipeline.step2 --eval-only          # just re-extract the raceline
-```
-
-Additional outputs in `artifacts/`:
-
-| file                 | contents                                         |
-|----------------------|--------------------------------------------------|
-| `rl_policy.zip`      | trained PPO weights (resumable)                  |
-| `raceline.csv`       | racing line waypoints: `x_m, y_m, curvature_1pm` |
-| `raceline_debug.png` | racing line over the map, coloured by curvature  |
-
-Note: pip's default `torch` wheel on x86 Linux bundles CUDA and is large; for
-CPU-only training install it first with
-`pip install torch --index-url https://download.pytorch.org/whl/cpu`.
-
-### Watching the attempts
-
-```bash
-python -m pipeline.watch                    # live window (run anytime, even
-                                            #   while training -- the policy
-                                            #   autosaves every 50k steps)
-python -m pipeline.watch --laps 3           # 3-lap runs
-python -m pipeline.watch --cars 4           # 4 cars at the same time
-python -m pipeline.watch --video runs.mp4   # record an MP4 (headless OK)
-python -m pipeline.watch --stochastic --random-spawn   # training-style runs
-python -m pipeline.watch --random           # untrained baseline
-```
-
-`--laps` also works on `step2`/`step3` training (laps per training run, with
-a bonus at every lap crossing).
-
-Renders the map, the car to scale, its lidar beams, the driven path, and a
-HUD with the run's rewards/punishments; ends with a LAP / CRASH banner.
-Press `q` or `Esc` to quit the live window.
-
-## Step 3: car parameters + racing line recalculation
-
-Prompts for the real car's measurements (weight, max/min speed, wheelbase
-width/length, chassis width/length, turning radius, tire grip coefficient),
-derives the physical limits (steering angle, lateral grip, traction-limited
-acceleration, wall margin), bakes them into the simulator, fine-tunes the
-step-2 policy under the new physics and re-extracts the racing line.
-
-```bash
-python -m pipeline.step3                                    # prompts, then trains
-python -m pipeline.step3 --params-file artifacts/car_params.yaml   # no prompts
-```
-
-Outputs: `car_params.yaml`, `rl_policy_tuned.zip`, `raceline_tuned.csv`,
-`raceline_tuned_debug.png`.
-
-## Step 4: braking / acceleration zone dictation
-
-Computes the fastest physically-possible speed at every waypoint
-(curvature cap + friction-circle forward/backward passes), splits the lap
-into ACCEL / BRAKE / HOLD zones, prints the dictation, and writes the final
-trajectory the trackers will follow.
-
-```bash
+python -m pipeline.step1 --preset sample   # recommended — no prompts
+python -m pipeline.step2
+python -m pipeline.watch              # optional: visualize training
+python -m pipeline.step3
 python -m pipeline.step4
-```
-
-Outputs: `raceline_final.csv` (`s, x, y, curvature, speed, zone` per
-waypoint), `zones.yaml`, `zones_map.png`, `speed_profile.png`.
-
-## Step 5: raceline tracking validation
-
-Follows `raceline_final.csv` with a pure-pursuit controller + speed P-control
-in the dynamic simulator — the same controller that later drives the real
-car. Reports lap splits, cross-track error and speed error.
-
-```bash
 python -m pipeline.step5 --laps 3
-python -m pipeline.step5 --speed-scale 0.7      # careful-mode preview
 ```
 
-## Step 6: VESC hardware link (Flipsky 75100 Pro V2 or any VESC)
+## Physics (v2)
 
-`car/vesc_uart.py` is a dependency-light VESC UART driver (pyserial only);
-`car/bench.py` is the interactive bring-up tool:
+The simulator uses a **high-fidelity dynamic single-track model**:
+
+- **Pacejka MF 6.1** lateral and longitudinal tire forces with combined-slip friction ellipse
+- **Longitudinal + lateral load transfer** from CoG height and track width
+- **VESC motor dynamics** — wheel speed, ERPM, gear ratio, torque limits
+- **Servo actuator** — rate limit + first-order lag
+- **RK4 integration** at 200 Hz (4 substeps × 50 Hz env step)
+- Low-speed kinematic blend below 1 m/s (industry standard)
+
+Physics lives in `raceline/physics/`; `pipeline/bicycle.py` re-exports for compatibility.
+
+## 3D simulation (Gazebo)
+
+Export your track to a Gazebo Harmonic world:
 
 ```bash
-python -m car.bench --port /dev/ttyACM0
+python -m pipeline.step1 --map maps/sample_track.png --resolution 0.05 \
+    --start 873,350 --heading -72
+python tools/export_gazebo_world.py --artifacts artifacts --vehicle-model
 ```
 
-Menu: telemetry, gentle motor spin test (wheels off!), steering servo trim,
-ERPM-per-(m/s) drive-ratio calibration, keyboard teleop with a dead-man
-stop, and saving everything to `car_link.yaml`.
+Then in a ROS 2 Jazzy workspace:
 
-VESC Tool prerequisites (once): run the FOC motor wizard (sensored), set
-battery cutoffs and current limits, cap ERPM, enable Servo Output on the
-PPM pin, and set App to Use = UART (baud 115200). Note: the Flipsky 75100
-requires a **4S+ battery (>= 14 V)** — a 3S pack is below its minimum.
+```bash
+cd ros2 && colcon build --packages-select raceline_gazebo
+source install/setup.bash
+ros2 launch raceline_gazebo sim.launch.py
+```
+
+The exported `track.sdf` contains a ground plane and downsampled wall collision
+boxes derived from your occupancy grid. The URDF in `ros2/raceline_gazebo/urdf/`
+provides an F1TENTH-scale vehicle stub — attach `gz-sim` ackermann or
+`ros2_control` plugins for full closed-loop driving.
+
+## Testing
+
+```bash
+pytest tests/ -v
+```
+
+## Configuration
+
+Default vehicle parameters: `config/default_car.yaml`. Override in step 3 or pass
+`--params-file artifacts/car_params.yaml`.
+
+## Hardware (Step 6)
+
+```bash
+python -m car.bench --port /dev/ttyACM0    # Windows: COM3
+```
+
+## Map reference
+
+| map | `--resolution` | `--start` | `--heading` | RC lap |
+|-----|----------------|-----------|-------------|--------|
+| `sample_track.png` | 0.05 | 873,350 | -72 | 95 m |
+| `monaco.png` | 0.05 | 1017,436 | 105 | 333 m |
+| `maps/spa.png` | 0.1 | 414,248 | 125 | 700 m |
+| `nurburgring.png` | 0.1 | 988,271 | -135 | 515 m |
+
+### Increasing track resolution
+
+`--resolution` is **metres per pixel** — **smaller = finer grid** (more detail).
+
+| Goal | Command |
+|------|---------|
+| Finer sample map (auto-scales PNG) | `python tools/make_sample_map.py --resolution 0.02` |
+| Finer grid on any map | `python -m pipeline.step1 --preset sample --resolution 0.02` |
+| Denser centerline waypoints | add `--spacing 0.02` (default 0.05 m between points) |
+
+Example high-resolution pipeline:
+```bash
+python tools/make_sample_map.py --resolution 0.02
+python -m pipeline.step1 --preset sample --spacing 0.02
+```
+
+Trade-off: lower `--resolution` and `--spacing` increase memory use and step-2 training time.

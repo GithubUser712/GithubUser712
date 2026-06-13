@@ -26,6 +26,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from .bicycle import CarParams
+from raceline.core import PreflightError, check_step_prerequisites
+from raceline.physics import TireParams
 from .step2 import (AutosaveCallback, PingCallback, best_deterministic_lap,
                     save_raceline, smooth_raceline)
 from .track_env import TrackData, TrackEnv, load_track_data
@@ -84,18 +86,22 @@ def derive_params(m: dict) -> tuple[CarParams, dict]:
     """
     max_steer = math.atan(m["wheelbase_length_m"] / m["turning_radius_m"])
     a_grip = m["tire_grip_mu"] * G
+    tire = TireParams(mu=m["tire_grip_mu"])
     params = CarParams(
         wheelbase_m=m["wheelbase_length_m"],
+        track_width_m=m["wheelbase_width_m"],
         max_speed_mps=m["max_speed_mps"],
         min_speed_mps=m["min_speed_mps"],
         max_steer_rad=max_steer,
         max_accel_mps2=a_grip,
         max_brake_mps2=a_grip,
         safety_radius_m=m["chassis_width_m"] / 2.0 + 0.05,
-        mu=m["tire_grip_mu"],
         mass_kg=m["mass_kg"],
         chassis_l_m=m["chassis_length_m"],
         chassis_w_m=m["chassis_width_m"],
+        tire_front=tire,
+        tire_rear=tire,
+        use_motor_dynamics=True,
     )
     derived = {
         "max_steer_rad": round(max_steer, 4),
@@ -139,7 +145,11 @@ def main(argv=None) -> int:
                     help="reuse the already-tuned policy, just re-extract")
     args = ap.parse_args(argv)
 
-    out_dir = Path(args.artifacts)
+    try:
+        out_dir = check_step_prerequisites(3, args.artifacts)
+    except PreflightError as exc:
+        print(f"ERROR: {exc}")
+        return 2
     track = load_track_data(out_dir)
 
     # 1. parameters in ----------------------------------------------------

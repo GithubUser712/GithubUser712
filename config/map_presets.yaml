@@ -1,0 +1,27 @@
+# Verified step-1 parameters per map.  Use:  python -m pipeline.step1 --preset NAME
+#
+# start = pixel x,y  (x = column from left, y = row from top)
+# heading = degrees, 0 = east, CCW positive (world frame)
+
+sample:
+  map: maps/sample_track.png
+  resolution: 0.05
+  # start/heading filled by tools/make_sample_map.py into maps/sample_track.meta.yaml
+
+monaco:
+  map: maps/monaco.png
+  resolution: 0.05
+  start: "1017,436"
+  heading: 105
+
+spa:
+  map: maps/spa.png
+  resolution: 0.1
+  start: "414,248"
+  heading: 125
+
+nurburgring:
+  map: maps/nurburgring.png
+  resolution: 0.1
+  start: "988,271"
+  heading: -135
