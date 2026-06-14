@@ -145,29 +145,32 @@ Default vehicle parameters: `config/default_car.yaml`. Override in step 3 or pas
 python -m car.bench --port /dev/ttyACM0    # Windows: COM3
 ```
 
-## Map reference
+## Map reference (0.01 m/px — default)
 
-| map | `--resolution` | `--start` | `--heading` | RC lap |
-|-----|----------------|-----------|-------------|--------|
-| `sample_track.png` | 0.05 | 873,350 | -72 | 95 m |
-| `monaco.png` | 0.05 | 1017,436 | 105 | 333 m |
-| `maps/spa.png` | 0.1 | 414,248 | 125 | 700 m |
-| `nurburgring.png` | 0.1 | 988,271 | -135 | 515 m |
+All presets use **0.01 m/px** and **0.01 m waypoint spacing**.  
+Regenerate maps after pulling: `python tools/make_sample_map.py && python tools/make_f1_tracks.py`
 
-### Increasing track resolution
+| Track | `--preset` | Start `x,y` | Heading (°) | Image size (px) | RC lap |
+|-------|------------|-------------|-------------|-----------------|--------|
+| Sample | `sample` | **4365, 1750** | **-72** | 5000 × 3500 | ~95 m |
+| Monaco | `monaco` | **5083, 2180** | **108** | 7914 × 10292 | ~333 m |
+| Spa | `spa` | **4136, 2483** | **125** | 13315 × 21214 | ~699 m |
+| Nürburgring | `nurburgring` | **9878, 2720** | **-135** | 11849 × 15907 | ~515 m |
 
-`--resolution` is **metres per pixel** — **smaller = finer grid** (more detail).
+Coordinates are in `maps/*.meta.yaml` (auto-loaded by `--preset`).
 
-| Goal | Command |
-|------|---------|
-| Finer sample map (auto-scales PNG) | `python tools/make_sample_map.py --resolution 0.02` |
-| Finer grid on any map | `python -m pipeline.step1 --preset sample --resolution 0.02` |
-| Denser centerline waypoints | add `--spacing 0.02` (default 0.05 m between points) |
-
-Example high-resolution pipeline:
 ```bash
-python tools/make_sample_map.py --resolution 0.02
-python -m pipeline.step1 --preset sample --spacing 0.02
+python -m pipeline.step1 --preset sample      # -> artifacts/
+python -m pipeline.step1 --preset monaco      # -> use --out artifacts_monaco
+python -m pipeline.step1 --preset spa         --out artifacts_spa
+python -m pipeline.step1 --preset nurburgring --out artifacts_nurburgring
 ```
 
-Trade-off: lower `--resolution` and `--spacing` increase memory use and step-2 training time.
+### Regenerating maps at 0.01 m/px
+
+```bash
+python tools/make_sample_map.py --resolution 0.01
+python tools/make_f1_tracks.py
+```
+
+F1 PNGs are large (~50–200 MB each). Generate on your Jetson rather than cloning them.

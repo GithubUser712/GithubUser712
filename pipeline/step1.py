@@ -68,8 +68,9 @@ def main(argv=None) -> int:
                     help="start heading in degrees (0 = +x/east, CCW positive)")
     ap.add_argument("--out", type=str, default="artifacts",
                     help="output directory (default: artifacts/)")
-    ap.add_argument("--spacing", type=float, default=0.05,
-                    help="centerline waypoint spacing in metres (default 0.05)")
+    ap.add_argument("--spacing", type=float, default=None,
+                    help="centerline waypoint spacing in metres (default: preset "
+                         "spacing or 0.01)")
     ap.add_argument("--wall-threshold", type=int, default=127,
                     help="grey level below which a pixel is a wall (default 127)")
     args = ap.parse_args(argv)
@@ -99,10 +100,15 @@ def main(argv=None) -> int:
             resolution = preset.resolution
             start_col, start_row = preset.start_col, preset.start_row
             heading_deg = preset.heading_deg
-            print(f"Preset '{args.preset}':")
+            if args.spacing is None:
+                spacing = preset.spacing
+            else:
+                spacing = args.spacing
+            print(f"Preset '{args.preset}' @ {resolution} m/px:")
             print(f"  map        {map_path}")
             print(f"  resolution {resolution} m/px")
             print(f"  start      {start_col},{start_row}  heading {heading_deg} deg")
+            print(f"  spacing    {spacing} m between waypoints")
         else:
             if args.map is not None:
                 map_path = resolve_path(args.map, root)
@@ -130,6 +136,7 @@ def main(argv=None) -> int:
             heading_deg = args.heading if args.heading is not None else _prompt(
                 "Start heading in degrees (0 = +x/east, 90 = +y/north, CCW): ",
                 float, "enter a number.")
+            spacing = args.spacing if args.spacing is not None else 0.01
     except ArtifactError as exc:
         return _fail(str(exc), 2)
 
@@ -170,7 +177,7 @@ def main(argv=None) -> int:
     try:
         centerline = extract_centerline(
             track, report.corridor_mask, start_xy, heading_rad,
-            spacing_m=args.spacing)
+            spacing_m=spacing)
     except CenterlineError as exc:
         return _fail(
             f"centerline extraction failed: {exc}\n"

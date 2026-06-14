@@ -1,7 +1,8 @@
-resolution: 0.05
-start_col: 873
-start_row: 350
+resolution: 0.01
+start_col: 4365
+start_row: 1750
 heading_deg: -71.6
 image_size:
-  width: 1000
-  height: 700
+  width: 5000
+  height: 3500
+scale: 5.0

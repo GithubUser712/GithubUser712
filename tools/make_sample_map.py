@@ -25,12 +25,13 @@ import yaml
 BASE_WIDTH, BASE_HEIGHT = 1000, 700
 BASE_CORRIDOR_PX = 70
 BASE_WALL_PX = 12
-BASE_RESOLUTION = 0.05
+REFERENCE_RESOLUTION = 0.05   # original design scale for auto pixel scaling
+DEFAULT_RESOLUTION = 0.01
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate maps/sample_track.png")
-    ap.add_argument("--resolution", type=float, default=BASE_RESOLUTION,
+    ap.add_argument("--resolution", type=float, default=DEFAULT_RESOLUTION,
                     help="metres per pixel for step 1 (default 0.05; use 0.02 "
                          "or 0.01 for finer grid)")
     ap.add_argument("--scale", type=float, default=None,
@@ -42,7 +43,7 @@ def main() -> int:
         print("ERROR: --resolution must be positive")
         return 2
 
-    scale = args.scale if args.scale is not None else BASE_RESOLUTION / args.resolution
+    scale = args.scale if args.scale is not None else REFERENCE_RESOLUTION / args.resolution
     width = int(round(BASE_WIDTH * scale))
     height = int(round(BASE_HEIGHT * scale))
     corridor_px = max(int(round(BASE_CORRIDOR_PX * scale)), 10)

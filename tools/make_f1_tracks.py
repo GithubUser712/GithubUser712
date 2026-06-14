@@ -22,17 +22,18 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import yaml
 from scipy import interpolate
 
 SCALE = 0.10              # 1:10 of the real circuit
 WALL_M = 0.30             # wall thickness on each side, metres at RC scale
 MARGIN_M = 2.0            # white border around the outer wall
 
-# typical real width ~10 m (Monaco is famously narrow) to ~13.5 m, at 1:10
+# All tracks rasterised at 0.01 m/px (high resolution; Jetson-heavy).
 TRACKS = {
-    "monaco": dict(source="mc-1929.geojson", width_m=1.00, resolution=0.05),
-    "spa": dict(source="be-1925.geojson", width_m=1.35, resolution=0.10),
-    "nurburgring": dict(source="de-1927.geojson", width_m=1.30, resolution=0.10),
+    "monaco": dict(source="mc-1929.geojson", width_m=1.00, resolution=0.01),
+    "spa": dict(source="be-1925.geojson", width_m=1.35, resolution=0.01),
+    "nurburgring": dict(source="de-1927.geojson", width_m=1.30, resolution=0.01),
 }
 
 SOURCES_DIR = Path("maps/sources")
@@ -106,15 +107,26 @@ def main(names: list[str]) -> int:
 
         out = OUT_DIR / f"{name}.png"
         cv2.imwrite(str(out), img)
+
+        meta_path = OUT_DIR / f"{name}.meta.yaml"
+        with open(meta_path, "w") as f:
+            yaml.safe_dump({
+                "resolution": cfg["resolution"],
+                "start_col": int(start[0]),
+                "start_row": int(start[1]),
+                "heading_deg": round(heading, 1),
+                "image_size": {"width": int(img.shape[1]), "height": int(img.shape[0])},
+                "lap_length_m": round(lap_m, 1),
+            }, f, sort_keys=False)
+
         print(f"\n{props['Name']}  (real lap {props['length']} m)")
         print(f"  wrote {out}: {img.shape[1]} x {img.shape[0]} px, "
               f"{cfg['resolution']} m/px")
+        print(f"  wrote {meta_path}")
         print(f"  RC scale: lap {lap_m:.0f} m, track width {cfg['width_m']} m, "
               f"walls {WALL_M} m")
         print(f"  run step 1 with:\n"
-              f"    python -m pipeline.step1 --map {out} "
-              f"--resolution {cfg['resolution']} "
-              f"--start {start[0]},{start[1]} --heading {heading:.0f} "
+              f"    python -m pipeline.step1 --preset {name} "
               f"--out artifacts_{name}")
     return 0
 

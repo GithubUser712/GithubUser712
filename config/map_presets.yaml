@@ -1,27 +1,28 @@
-# Verified step-1 parameters per map.  Use:  python -m pipeline.step1 --preset NAME
-#
-# start = pixel x,y  (x = column from left, y = row from top)
-# heading = degrees, 0 = east, CCW positive (world frame)
+# Map presets at 0.01 m/px — coordinates live in maps/*.meta.yaml
+# Regenerate maps:  python tools/make_sample_map.py
+#                    python tools/make_f1_tracks.py
+# Run step 1:        python -m pipeline.step1 --preset NAME
 
 sample:
   map: maps/sample_track.png
-  resolution: 0.05
-  # start/heading filled by tools/make_sample_map.py into maps/sample_track.meta.yaml
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/sample_track.meta.yaml
 
 monaco:
   map: maps/monaco.png
-  resolution: 0.05
-  start: "1017,436"
-  heading: 105
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/monaco.meta.yaml
 
 spa:
   map: maps/spa.png
-  resolution: 0.1
-  start: "414,248"
-  heading: 125
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/spa.meta.yaml
 
 nurburgring:
   map: maps/nurburgring.png
-  resolution: 0.1
-  start: "988,271"
-  heading: -135
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/nurburgring.meta.yaml
