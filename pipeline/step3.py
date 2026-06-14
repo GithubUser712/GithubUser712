@@ -28,6 +28,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from .bicycle import CarParams
 from raceline.core import PreflightError, check_step_prerequisites
 from raceline.physics import TireParams
+from raceline.rl.policy_memory import (
+    load_warm_start_model,
+    register_policy,
+    track_label_from_artifacts,
+)
 from .step2 import (AutosaveCallback, PingCallback, best_deterministic_lap,
                     save_raceline, smooth_raceline)
 from .track_env import TrackData, TrackEnv, load_track_data
@@ -195,17 +200,16 @@ def main(argv=None) -> int:
 
         model = None
         if not args.fresh:
-            for warm in (tuned_policy, base_policy):
-                if not warm.is_file():
-                    continue
-                try:
-                    model = PPO.load(warm, env=venv, device=args.device)
-                    print(f"Warm-starting from {warm} (same network, "
-                          "new physics)")
-                    break
-                except Exception:
-                    print(f"NOTE: {warm.name} is incompatible (saved before "
-                          "a physics/observation upgrade) -- skipping it")
+            obs_shape = tuple(int(x) for x in venv.observation_space.shape)
+            model, source = load_warm_start_model(
+                PPO, venv, args.device, obs_shape,
+                local_paths=[tuned_policy, base_policy],
+                artifacts_dir=out_dir,
+                fresh=False,
+                resume=False,
+            )
+            if model is not None:
+                print(f"Warm-starting: {source}")
         if model is None:
             model = PPO("MlpPolicy", venv, seed=args.seed, verbose=0,
                         learning_rate=3e-4, n_steps=1024, batch_size=256,
@@ -233,6 +237,19 @@ def main(argv=None) -> int:
     raceline = smooth_raceline(traj, track.spacing_m)
     written = save_raceline(track, raceline, lap_time, out_dir,
                             stem="raceline_tuned", note="your car's parameters")
+    if not args.skip_training:
+        register_policy(
+            tuned_policy,
+            track_label=track_label_from_artifacts(out_dir),
+            artifacts_dir=out_dir,
+            source_step=3,
+            policy_kind="tuned",
+            observation_shape=tuple(int(x) for x in model.observation_space.shape),
+            track_length_m=track.length_m,
+            timesteps=args.timesteps,
+            lap_time_s=float(lap_time) if lap_time < float("inf") else None,
+        )
+        print("Archived tuned policy to policy_memory/ for future tracks.")
     print(f"\nBest lap with your car's physics: {lap_time:.2f} s")
     print("Wrote:")
     for p in written:

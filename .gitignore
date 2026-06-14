@@ -4,6 +4,7 @@ __pycache__/
 venv/
 artifacts/
 artifacts_*/
+policy_memory/
 .pytest_cache/
 *.egg-info/
 dist/

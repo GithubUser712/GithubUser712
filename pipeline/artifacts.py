@@ -25,7 +25,8 @@ from .map_ingestion import WALL, TrackMap
 
 
 def save_artifacts(track: TrackMap, start_xy, heading_rad: float,
-                   centerline: Centerline, out_dir: str | Path) -> list[Path]:
+                   centerline: Centerline, out_dir: str | Path,
+                   *, track_label: str | None = None) -> list[Path]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
@@ -61,6 +62,7 @@ def save_artifacts(track: TrackMap, start_xy, heading_rad: float,
     meta_path = out_dir / "track_meta.yaml"
     with open(meta_path, "w") as f:
         yaml.safe_dump({
+            "track_label": track_label or Path(track.source_path).stem,
             "source_image": str(track.source_path),
             "resolution_m_per_px": float(track.resolution),
             "grid_size_px": {"cols": int(track.shape[1]), "rows": int(track.shape[0])},

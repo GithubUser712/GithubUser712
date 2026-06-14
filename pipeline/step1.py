@@ -142,6 +142,7 @@ def main(argv=None) -> int:
         return _fail(str(exc), 2)
 
     heading_rad = math.radians(heading_deg)
+    track_label = args.preset if args.preset else map_path.stem
 
     try:
         track = load_track_map(map_path, resolution, args.wall_threshold)
@@ -194,7 +195,8 @@ def main(argv=None) -> int:
 
     out_dir = resolve_path(args.out, root)
     try:
-        written = save_artifacts(track, start_xy, heading_rad, centerline, out_dir)
+        written = save_artifacts(track, start_xy, heading_rad, centerline, out_dir,
+                                 track_label=track_label)
     except Exception as exc:
         print(traceback.format_exc())
         return _fail(f"failed to write artifacts: {exc}", 1)

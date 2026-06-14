@@ -3,7 +3,11 @@
     python -m pipeline.step2                       # uses artifacts/, 1M steps
     python -m pipeline.step2 --timesteps 2000000   # train longer
     python -m pipeline.step2 --resume              # continue from saved policy
+    python -m pipeline.step2 --fresh               # ignore past runs, train from scratch
     python -m pipeline.step2 --eval-only           # just extract the raceline
+
+Policies are archived in policy_memory/ after each run.  New tracks automatically
+warm-start from the best compatible prior policy (cross-track transfer).
 
 Every finished run (episode) prints one ping line with its rewards and
 punishments.  After training, the best deterministic lap is recorded,
@@ -30,6 +34,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from scipy import interpolate
 
 from raceline.core import PreflightError, check_step_prerequisites
+from raceline.rl.policy_memory import (
+    load_warm_start_model,
+    register_policy,
+    track_label_from_artifacts,
+)
 from .track_env import TrackData, TrackEnv, load_track_data
 
 
@@ -196,6 +205,9 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--resume", action="store_true",
                     help="continue training from the saved policy")
+    ap.add_argument("--fresh", action="store_true",
+                    help="train from scratch; do not load policy_memory or "
+                         "cross-track checkpoints")
     ap.add_argument("--eval-only", action="store_true",
                     help="skip training, just extract the raceline")
     ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
@@ -215,12 +227,13 @@ def main(argv=None) -> int:
         return 2
     policy_path = out_dir / "rl_policy.zip"
     track = load_track_data(out_dir)
+    trained = not args.eval_only
     print(f"Track loaded: {track.length_m:.1f} m loop, "
           f"{len(track.centerline)} waypoints, "
           f"width {2 * track.clearance.min():.2f}-{2 * track.clearance.max():.2f} m")
 
     factory = partial(_make_env, track, args.laps)
-    if not args.eval_only:
+    if trained:
         vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
         venv = vec_cls([factory for _ in range(args.n_envs)])
 
@@ -234,13 +247,26 @@ def main(argv=None) -> int:
                       "--resume to train fresh.")
                 return 2
         else:
-            model = PPO(
-                "MlpPolicy", venv, seed=args.seed, verbose=0,
-                learning_rate=3e-4, n_steps=1024, batch_size=256,
-                gamma=0.995, gae_lambda=0.95, ent_coef=0.005,
-                policy_kwargs=dict(net_arch=[256, 256]),
-                device=args.device,
+            obs_shape = tuple(int(x) for x in venv.observation_space.shape)
+            model, source = load_warm_start_model(
+                PPO, venv, args.device, obs_shape,
+                local_paths=[policy_path],
+                artifacts_dir=out_dir,
+                fresh=args.fresh,
+                resume=False,
             )
+            if model is not None:
+                print(f"Warm-starting: {source}\n")
+            else:
+                if not args.fresh:
+                    print("No compatible past policy found — training from scratch.\n")
+                model = PPO(
+                    "MlpPolicy", venv, seed=args.seed, verbose=0,
+                    learning_rate=3e-4, n_steps=1024, batch_size=256,
+                    gamma=0.995, gae_lambda=0.95, ent_coef=0.005,
+                    policy_kwargs=dict(net_arch=[256, 256]),
+                    device=args.device,
+                )
         print(f"Training PPO for {args.timesteps:,} timesteps on "
               f"{args.n_envs} parallel sims, net on '{model.device}' "
               "-- one ping per finished run:\n")
@@ -267,6 +293,19 @@ def main(argv=None) -> int:
 
     raceline = smooth_raceline(traj, track.spacing_m)
     written = save_raceline(track, raceline, lap_time, out_dir)
+    if trained:
+        register_policy(
+            policy_path,
+            track_label=track_label_from_artifacts(out_dir),
+            artifacts_dir=out_dir,
+            source_step=2,
+            policy_kind="base",
+            observation_shape=tuple(int(x) for x in model.observation_space.shape),
+            track_length_m=track.length_m,
+            timesteps=args.timesteps,
+            lap_time_s=float(lap_time) if lap_time < float("inf") else None,
+        )
+        print("Archived to policy_memory/ for future tracks.")
     print(f"\nBest lap: {lap_time:.2f} s (generic car parameters)")
     print("Wrote:")
     for p in written:

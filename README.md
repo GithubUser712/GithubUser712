@@ -88,6 +88,13 @@ python -m pipeline.step1 --preset sample   # recommended — no prompts
 python -m pipeline.step2
 python -m pipeline.watch              # optional: visualize training
 python -m pipeline.step3
+```
+
+**Cross-track memory:** each step 2/3 run archives its PPO weights under `policy_memory/`.
+When you ingest a new track (step 1) and run step 2, training automatically warm-starts
+from the best compatible past policy. Use `--fresh` on step 2 or step 3 to ignore memory.
+
+```bash
 python -m pipeline.step4
 python -m pipeline.step5 --laps 3
 ```
