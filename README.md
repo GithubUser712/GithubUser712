@@ -164,16 +164,18 @@ python tools/import_osm_relation.py isle_of_man
 python tools/import_targa_florio.py
 ```
 
-| Track | `--preset` | RC lap (1:10) | Est. PNG @ 0.01 m/px | Notes |
-|-------|------------|---------------|----------------------|-------|
-| Sample | `sample` | ~95 m | 5000 × 3500 | synthetic oval |
-| Monaco | `monaco` | ~333 m | ~7900 × 10300 | F1 circuit |
-| Spa | `spa` | ~699 m | ~13300 × 21200 | F1 circuit |
-| Nürburgring (Gesamtstrecke) | `nurburgring` | ~2380 m | ~61800 × 57600 | JRT Kurzanbindung; ~3.5 GB PNG |
-| Isle of Man TT | `isle_of_man` | ~6070 m | ~167000 × 187000 | OSM relation 188240; exceeds image limit |
-| Targa Florio Grande | `targa_florio` | ~14880 m | ~417000 × 384000 | 92 mi / 148.8 km; exceeds image limit |
+| Track | `--preset` | Start `x,y` | Heading (°) | Image size (px) | RC lap |
+|-------|------------|-------------|-------------|-----------------|--------|
+| Sample | `sample` | **4365, 1750** | **-72** | 5000 × 3500 | ~95 m |
+| Monaco | `monaco` | **5083, 2180** | **108** | 7914 × 10292 | ~333 m |
+| Spa | `spa` | **4136, 2483** | **125** | 13315 × 21214 | ~699 m |
+| Nürburgring (Gesamtstrecke) | `nurburgring` | **19197, 7058** | **136** | ~61800 × 57600 | ~2380 m |
+| Isle of Man TT | `isle_of_man` | **100694, 173410** | **129** | ~167000 × 187000 | ~6070 m |
+| Targa Florio Grande | `targa_florio` | **53537, 383** | **-98** | ~417000 × 384000 | ~14880 m |
 
-Start coordinates are in `maps/*.meta.yaml` (auto-loaded by `--preset`) after each PNG is generated.
+Start `x,y` is **column, row** in the PNG (`start_col`, `start_row` in `maps/*.meta.yaml`).
+Auto-loaded by `--preset`; values above are for **0.01 m/px** maps after `make_f1_tracks.py`.
+The Nürburgring PNG currently in git was generated at 0.05 m/px (**3839, 1411**, heading **136**) — regenerate at 0.01 for the coordinates in this table.
 
 Nürburgring is the **Gesamtstrecke (Kurzanbindung)** — Nordschleife plus GP connector (~24 km real), not the standalone GP loop.
 
