@@ -4,7 +4,7 @@ Foolproof usage (Jetson or any machine):
 
     python -m pipeline.step1 --preset sample
 
-Presets: sample, monaco, spa, nurburgring  (see config/map_presets.yaml)
+Presets: sample, monaco, spa, nurburgring, isle_of_man, targa_florio
 """
 
 from __future__ import annotations
@@ -58,7 +58,8 @@ def main(argv=None) -> int:
         description="Step 1: ingest a track map (black = wall, white = free).",
         epilog="Easiest:  python -m pipeline.step1 --preset sample")
     ap.add_argument("--preset", type=str,
-                    choices=["sample", "monaco", "spa", "nurburgring"],
+                    choices=["sample", "monaco", "spa", "nurburgring",
+                             "isle_of_man", "targa_florio"],
                     help="built-in map with known-good start pose (recommended)")
     ap.add_argument("--map", type=str, help="path to the track image")
     ap.add_argument("--resolution", type=float, help="metres per pixel")

@@ -147,30 +147,47 @@ python -m car.bench --port /dev/ttyACM0    # Windows: COM3
 
 ## Map reference (0.01 m/px — default)
 
-All presets use **0.01 m/px** and **0.01 m waypoint spacing**.  
-Regenerate maps after pulling: `python tools/make_sample_map.py && python tools/make_f1_tracks.py`
+All presets use **0.01 m/px** and **0.01 m waypoint spacing** at **1:10 RC scale**.
 
-| Track | `--preset` | Start `x,y` | Heading (°) | Image size (px) | RC lap |
-|-------|------------|-------------|-------------|-----------------|--------|
-| Sample | `sample` | **4365, 1750** | **-72** | 5000 × 3500 | ~95 m |
-| Monaco | `monaco` | **5083, 2180** | **108** | 7914 × 10292 | ~333 m |
-| Spa | `spa` | **4136, 2483** | **125** | 13315 × 21214 | ~699 m |
-| Nürburgring | `nurburgring` | **9878, 2720** | **-135** | 11849 × 15907 | ~515 m |
-
-Coordinates are in `maps/*.meta.yaml` (auto-loaded by `--preset`).
-
-```bash
-python -m pipeline.step1 --preset sample      # -> artifacts/
-python -m pipeline.step1 --preset monaco      # -> use --out artifacts_monaco
-python -m pipeline.step1 --preset spa         --out artifacts_spa
-python -m pipeline.step1 --preset nurburgring --out artifacts_nurburgring
-```
-
-### Regenerating maps at 0.01 m/px
+Regenerate maps after pulling:
 
 ```bash
 python tools/make_sample_map.py --resolution 0.01
 python tools/make_f1_tracks.py
 ```
 
-F1 PNGs are large (~50–200 MB each). Generate on your Jetson rather than cloning them.
+Import road-course geometry when sources are missing:
+
+```bash
+python tools/import_jrt_nring.py
+python tools/import_osm_relation.py isle_of_man
+python tools/import_targa_florio.py
+```
+
+| Track | `--preset` | RC lap (1:10) | Est. PNG @ 0.01 m/px | Notes |
+|-------|------------|---------------|----------------------|-------|
+| Sample | `sample` | ~95 m | 5000 × 3500 | synthetic oval |
+| Monaco | `monaco` | ~333 m | ~7900 × 10300 | F1 circuit |
+| Spa | `spa` | ~699 m | ~13300 × 21200 | F1 circuit |
+| Nürburgring (Gesamtstrecke) | `nurburgring` | ~2380 m | ~61800 × 57600 | JRT Kurzanbindung; ~3.5 GB PNG |
+| Isle of Man TT | `isle_of_man` | ~6070 m | ~167000 × 187000 | OSM relation 188240; exceeds image limit |
+| Targa Florio Grande | `targa_florio` | ~14880 m | ~417000 × 384000 | 92 mi / 148.8 km; exceeds image limit |
+
+Start coordinates are in `maps/*.meta.yaml` (auto-loaded by `--preset`) after each PNG is generated.
+
+Nürburgring is the **Gesamtstrecke (Kurzanbindung)** — Nordschleife plus GP connector (~24 km real), not the standalone GP loop.
+
+Targa Florio is the **Grande Circuito delle Madonie** (148.823 km), a smooth closed loop through the historic control towns.
+
+**Large road courses:** Isle of Man and Targa Florio are configured at 0.01 m/px, but a single PNG at that resolution would be hundreds of thousands of pixels per side (multi‑GB). `make_f1_tracks.py` stops above ~65k px per side. Nürburgring fits on a high‑RAM machine; the two longest road courses need a tiled-map pipeline for full 0.01 m/px rasterisation.
+
+```bash
+python -m pipeline.step1 --preset sample
+python -m pipeline.step1 --preset monaco       --out artifacts_monaco
+python -m pipeline.step1 --preset spa          --out artifacts_spa
+python -m pipeline.step1 --preset nurburgring  --out artifacts_nurburgring
+python -m pipeline.step1 --preset isle_of_man  --out artifacts_iom
+python -m pipeline.step1 --preset targa_florio --out artifacts_targa
+```
+
+F1 PNGs are large (~50–200 MB for Monaco/Spa; Nürburgring multi‑GB). Generate on your Jetson rather than cloning them.

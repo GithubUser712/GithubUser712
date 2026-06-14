@@ -1,8 +1,10 @@
-resolution: 0.01
-start_col: 9878
-start_row: 2720
-heading_deg: -134.9
+resolution: 0.05
+spacing: 0.05
+start_col: 3839
+start_row: 1411
+heading_deg: 136.4
 image_size:
-  width: 11849
-  height: 15907
-lap_length_m: 514.9
+  width: 12355
+  height: 11526
+lap_length_m: 2382.0
+variant: "N\xFCrburgring Gesamtstrecke (Kurzanbindung)"

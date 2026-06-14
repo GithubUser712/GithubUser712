@@ -65,6 +65,15 @@ def ensure_f1_map(root: Path, name: str) -> Path:
     return out
 
 
+F1_TRACK_PRESETS = ("monaco", "spa", "nurburgring", "isle_of_man", "targa_florio")
+
+IMPORT_BEFORE_GENERATE = {
+    "nurburgring": ("import_jrt_nring.py", "maps/sources/de-gesamtstrecke.geojson", []),
+    "isle_of_man": ("import_osm_relation.py", "maps/sources/im-tt.geojson", ["isle_of_man"]),
+    "targa_florio": ("import_targa_florio.py", "maps/sources/it-targa-grande.geojson", []),
+}
+
+
 def load_preset(name: str, root: Path | None = None) -> MapPreset:
     """Load a named preset; auto-generates map + meta when missing."""
     base = root or find_project_root()
@@ -80,7 +89,16 @@ def load_preset(name: str, root: Path | None = None) -> MapPreset:
 
     if name == "sample":
         ensure_sample_map(base)
-    elif name in ("monaco", "spa", "nurburgring"):
+    elif name in F1_TRACK_PRESETS:
+        if name in IMPORT_BEFORE_GENERATE:
+            script_name, geo_rel, extra = IMPORT_BEFORE_GENERATE[name]
+            script = base / "tools" / script_name
+            geo = base / geo_rel
+            if not geo.is_file() and script.is_file():
+                print(f"Importing {geo.name} (first run) ...")
+                subprocess.run(
+                    [sys.executable, str(script), *extra],
+                    cwd=base, check=True)
         ensure_f1_map(base, name)
 
     map_path = resolve_path(map_rel, base)
@@ -102,7 +120,7 @@ def load_preset(name: str, root: Path | None = None) -> MapPreset:
         name=name,
         map_path=map_path,
         resolution=float(meta.get("resolution", cfg["resolution"])),
-        spacing=float(cfg.get("spacing", meta.get("resolution", 0.01))),
+        spacing=float(meta.get("spacing", cfg.get("spacing", meta.get("resolution", 0.01)))),
         start_col=int(meta["start_col"]),
         start_row=int(meta["start_row"]),
         heading_deg=float(meta["heading_deg"]),
