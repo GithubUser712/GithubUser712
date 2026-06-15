@@ -1,7 +1,10 @@
 """Step 2 entry point: train an RL agent to find the racing line.
 
-    python -m pipeline.step2                       # uses artifacts/, 1M steps
-    python -m pipeline.step2 --timesteps 2000000   # train longer
+    python -m pipeline.step2 --mode bullet_learn  # fastest bare-bones pass
+    python -m pipeline.step2 --mode quick_train    # faster, less thorough
+    python -m pipeline.step2 --mode deep_learn     # full-fidelity training
+    python -m pipeline.step2 --mode deep_learn_xhigh  # max quality (6 envs, 6 substeps)
+    python -m pipeline.step2 --timesteps 2000000   # override mode budget
     python -m pipeline.step2 --resume              # continue from saved policy
     python -m pipeline.step2 --fresh               # ignore past runs, train from scratch
     python -m pipeline.step2 --eval-only           # just extract the raceline
@@ -38,6 +41,13 @@ from raceline.rl.policy_memory import (
     load_warm_start_model,
     register_policy,
     track_label_from_artifacts,
+)
+from raceline.rl.training_modes import (
+    MODE_CHOICES,
+    env_build_options,
+    format_mode_summary,
+    ppo_kwargs,
+    resolve_budget,
 )
 from .track_env import TrackData, TrackEnv, load_track_data
 
@@ -188,8 +198,11 @@ def save_raceline(track: TrackData, raceline: np.ndarray, lap_time: float,
 
 # --------------------------------------------------------------------- main
 
-def _make_env(track: TrackData, laps: int = 1) -> TrackEnv:
-    return TrackEnv(track, random_spawn=True, laps=laps)
+def _make_env(track: TrackData, laps: int = 1, *,
+              mode_cfg: dict | None = None,
+              params=None) -> TrackEnv:
+    p, opts = env_build_options(mode_cfg or {"env": {}}, params)
+    return TrackEnv(track, params=p, laps=laps, **opts)
 
 
 def main(argv=None) -> int:
@@ -197,9 +210,14 @@ def main(argv=None) -> int:
         description="Step 2: RL training for the racing line.")
     ap.add_argument("--artifacts", type=str, default="artifacts",
                     help="directory written by step 1 (default: artifacts/)")
-    ap.add_argument("--timesteps", type=int, default=1_000_000)
-    ap.add_argument("--n-envs", type=int, default=4,
-                    help="parallel simulation environments")
+    ap.add_argument("--mode", type=str, default="deep_learn",
+                    choices=list(MODE_CHOICES),
+                    help="training profile (quick_train: ~30-45 min target on "
+                         "sample/small tracks; deep_learn: full-fidelity)")
+    ap.add_argument("--timesteps", type=int, default=None,
+                    help="override mode timesteps")
+    ap.add_argument("--n-envs", type=int, default=None,
+                    help="override mode parallel simulation environments")
     ap.add_argument("--laps", type=int, default=1,
                     help="laps per run during training (default 1)")
     ap.add_argument("--seed", type=int, default=0)
@@ -214,6 +232,8 @@ def main(argv=None) -> int:
                     help="where the neural net runs (default: auto = cuda if "
                          "available); the simulator itself always runs on CPU")
     args = ap.parse_args(argv)
+    timesteps, n_envs, mode_cfg = resolve_budget(
+        args.mode, 2, timesteps=args.timesteps, n_envs=args.n_envs)
 
     import torch
     cuda = torch.cuda.is_available()
@@ -231,11 +251,13 @@ def main(argv=None) -> int:
     print(f"Track loaded: {track.length_m:.1f} m loop, "
           f"{len(track.centerline)} waypoints, "
           f"width {2 * track.clearance.min():.2f}-{2 * track.clearance.max():.2f} m")
+    print(format_mode_summary(args.mode, mode_cfg,
+                            timesteps=timesteps, n_envs=n_envs))
 
-    factory = partial(_make_env, track, args.laps)
+    factory = partial(_make_env, track, laps=args.laps, mode_cfg=mode_cfg)
     if trained:
-        vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
-        venv = vec_cls([factory for _ in range(args.n_envs)])
+        vec_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
+        venv = vec_cls([factory for _ in range(n_envs)])
 
         if args.resume and policy_path.is_file():
             print(f"Resuming training from {policy_path}\n")
@@ -261,20 +283,20 @@ def main(argv=None) -> int:
                 if not args.fresh:
                     print("No compatible past policy found — training from scratch.\n")
                 model = PPO(
-                    "MlpPolicy", venv, seed=args.seed, verbose=0,
-                    learning_rate=3e-4, n_steps=1024, batch_size=256,
-                    gamma=0.995, gae_lambda=0.95, ent_coef=0.005,
-                    policy_kwargs=dict(net_arch=[256, 256]),
-                    device=args.device,
+                    "MlpPolicy", venv,
+                    **ppo_kwargs(mode_cfg, seed=args.seed, device=args.device),
                 )
-        print(f"Training PPO for {args.timesteps:,} timesteps on "
-              f"{args.n_envs} parallel sims, net on '{model.device}' "
+        print(f"Training PPO for {timesteps:,} timesteps on "
+              f"{n_envs} parallel sims, net on '{model.device}' "
               "-- one ping per finished run:\n")
         print("(watch progress anytime from a second terminal: "
               "python -m pipeline.watch)\n")
-        model.learn(total_timesteps=args.timesteps,
-                    callback=CallbackList([PingCallback(),
-                                           AutosaveCallback(policy_path)]))
+        model.learn(total_timesteps=timesteps,
+                    callback=CallbackList([
+                        PingCallback(),
+                        AutosaveCallback(policy_path,
+                                         every=int(mode_cfg["autosave_every"])),
+                    ]))
         model.save(policy_path)
         venv.close()
         print(f"\nPolicy saved to {policy_path}")
@@ -288,7 +310,7 @@ def main(argv=None) -> int:
     traj, lap_time = best_deterministic_lap(model, track)
     if traj is None:
         print("\nNo complete lap yet -- the policy needs more training.\n"
-              f"Run:  python -m pipeline.step2 --resume --timesteps {args.timesteps}")
+              f"Run:  python -m pipeline.step2 --resume --timesteps {timesteps}")
         return 1
 
     raceline = smooth_raceline(traj, track.spacing_m)
@@ -302,7 +324,7 @@ def main(argv=None) -> int:
             policy_kind="base",
             observation_shape=tuple(int(x) for x in model.observation_space.shape),
             track_length_m=track.length_m,
-            timesteps=args.timesteps,
+            timesteps=timesteps,
             lap_time_s=float(lap_time) if lap_time < float("inf") else None,
         )
         print("Archived to policy_memory/ for future tracks.")

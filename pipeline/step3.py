@@ -1,7 +1,8 @@
 """Step 3 entry point: enter the real car's parameters and recalculate the
 racing line with proper physics.
 
-    python -m pipeline.step3                      # prompts for every parameter
+    python -m pipeline.step3 --mode quick_train
+    python -m pipeline.step3 --mode deep_learn
     python -m pipeline.step3 --params-file artifacts/car_params.yaml
     python -m pipeline.step3 --timesteps 800000 --device cuda
 
@@ -33,11 +34,24 @@ from raceline.rl.policy_memory import (
     register_policy,
     track_label_from_artifacts,
 )
+from raceline.rl.training_modes import (
+    MODE_CHOICES,
+    env_build_options,
+    format_mode_summary,
+    ppo_kwargs,
+    resolve_budget,
+)
 from .step2 import (AutosaveCallback, PingCallback, best_deterministic_lap,
                     save_raceline, smooth_raceline)
 from .track_env import TrackData, TrackEnv, load_track_data
 
 G = 9.81
+
+
+def _make_env_step3(track: TrackData, params: CarParams, *, laps: int,
+                    env_opts: dict) -> TrackEnv:
+    return TrackEnv(track, params=params, laps=laps, **env_opts)
+
 
 # prompt text, dict key, unit, (sane minimum, sane maximum)
 _PARAM_SPEC = [
@@ -136,9 +150,13 @@ def main(argv=None) -> int:
     ap.add_argument("--params-file", type=str,
                     help="load measurements from a saved car_params.yaml "
                          "instead of prompting")
-    ap.add_argument("--timesteps", type=int, default=600_000,
-                    help="fine-tuning budget under the new physics")
-    ap.add_argument("--n-envs", type=int, default=4)
+    ap.add_argument("--mode", type=str, default="deep_learn",
+                    choices=list(MODE_CHOICES),
+                    help="training profile (must match step 2 for best results)")
+    ap.add_argument("--timesteps", type=int, default=None,
+                    help="override mode fine-tuning budget")
+    ap.add_argument("--n-envs", type=int, default=None,
+                    help="override mode parallel simulation environments")
     ap.add_argument("--laps", type=int, default=1,
                     help="laps per run during training (default 1)")
     ap.add_argument("--seed", type=int, default=0)
@@ -149,6 +167,8 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-training", action="store_true",
                     help="reuse the already-tuned policy, just re-extract")
     args = ap.parse_args(argv)
+    timesteps, n_envs, mode_cfg = resolve_budget(
+        args.mode, 3, timesteps=args.timesteps, n_envs=args.n_envs)
 
     try:
         out_dir = check_step_prerequisites(3, args.artifacts)
@@ -182,6 +202,9 @@ def main(argv=None) -> int:
         yaml.safe_dump({"measured": measured, "derived": derived},
                        f, sort_keys=False)
     print(f"Saved {params_path}\n")
+    print(format_mode_summary(args.mode, mode_cfg,
+                            timesteps=timesteps, n_envs=n_envs))
+    print()
 
     # 2. recalculate the racing line under the new physics ----------------
     tuned_policy = out_dir / "rl_policy_tuned.zip"
@@ -194,9 +217,16 @@ def main(argv=None) -> int:
             return 2
         model = PPO.load(tuned_policy, device=args.device)
     else:
-        factory = partial(TrackEnv, track, params, laps=args.laps)
-        vec_cls = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
-        venv = vec_cls([factory for _ in range(args.n_envs)])
+        p, env_opts = env_build_options(mode_cfg, params)
+        factory = partial(
+            _make_env_step3,
+            track,
+            p,
+            laps=args.laps,
+            env_opts=env_opts,
+        )
+        vec_cls = SubprocVecEnv if n_envs > 1 else DummyVecEnv
+        venv = vec_cls([factory for _ in range(n_envs)])
 
         model = None
         if not args.fresh:
@@ -211,17 +241,19 @@ def main(argv=None) -> int:
             if model is not None:
                 print(f"Warm-starting: {source}")
         if model is None:
-            model = PPO("MlpPolicy", venv, seed=args.seed, verbose=0,
-                        learning_rate=3e-4, n_steps=1024, batch_size=256,
-                        gamma=0.995, gae_lambda=0.95, ent_coef=0.005,
-                        policy_kwargs=dict(net_arch=[256, 256]),
-                        device=args.device)
-        print(f"Recalculating racing line: {args.timesteps:,} timesteps with "
+            model = PPO(
+                "MlpPolicy", venv,
+                **ppo_kwargs(mode_cfg, seed=args.seed, device=args.device),
+            )
+        print(f"Recalculating racing line: {timesteps:,} timesteps with "
               "your car's physics -- one ping per finished run:\n")
         from stable_baselines3.common.callbacks import CallbackList
-        model.learn(total_timesteps=args.timesteps,
-                    callback=CallbackList([PingCallback(),
-                                           AutosaveCallback(tuned_policy)]))
+        model.learn(total_timesteps=timesteps,
+                    callback=CallbackList([
+                        PingCallback(),
+                        AutosaveCallback(tuned_policy,
+                                         every=int(mode_cfg["autosave_every"])),
+                    ]))
         model.save(tuned_policy)
         venv.close()
         print(f"\nTuned policy saved to {tuned_policy}")
@@ -231,7 +263,7 @@ def main(argv=None) -> int:
     if traj is None:
         print("\nNo complete lap under the new physics yet -- fine-tune more:\n"
               f"  python -m pipeline.step3 --params-file {params_path} "
-              f"--timesteps {args.timesteps}")
+              f"--mode {args.mode} --timesteps {timesteps}")
         return 1
 
     raceline = smooth_raceline(traj, track.spacing_m)
@@ -246,7 +278,7 @@ def main(argv=None) -> int:
             policy_kind="tuned",
             observation_shape=tuple(int(x) for x in model.observation_space.shape),
             track_length_m=track.length_m,
-            timesteps=args.timesteps,
+            timesteps=timesteps,
             lap_time_s=float(lap_time) if lap_time < float("inf") else None,
         )
         print("Archived tuned policy to policy_memory/ for future tracks.")

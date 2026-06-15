@@ -43,6 +43,43 @@ _CAR_COLOURS = [(160, 80, 20), (20, 140, 200), (140, 20, 140), (20, 160, 60),
                 (0, 90, 200), (90, 90, 90), (150, 150, 20), (60, 20, 120)]
 
 
+def _opencv_gui_available() -> bool:
+    """True when this OpenCV build can open live windows (not headless)."""
+    try:
+        info = cv2.getBuildInformation().lower()
+    except cv2.error:
+        return False
+    if "gui:" in info:
+        chunk = info.split("gui:", 1)[1].split("\n", 1)[0]
+        if "none" in chunk:
+            return False
+    # headless wheels often report no GTK/QT/Cocoa backend at all
+    return any(k in info for k in ("gtk", "qt", "win32ui", "cocoa"))
+
+
+def _no_display_help() -> str:
+    return (
+        "ERROR: live window unavailable.\n"
+        "\n"
+        "Most common on this project: opencv-python-headless is installed "
+        "(no GUI support even with a monitor attached).\n"
+        "  pip uninstall -y opencv-python-headless opencv-python\n"
+        "  pip install opencv-python\n"
+        "  # Jetson desktop may also need:\n"
+        "  # sudo apt install -y libgtk-3-0 libcanberra-gtk3-module\n"
+        "\n"
+        "If you are SSH'd into the Jetson, the monitor on the device does not "
+        "count — point DISPLAY at the desktop session:\n"
+        "  export DISPLAY=:0\n"
+        "  xhost +local:    # run once on the Jetson desktop terminal\n"
+        "\n"
+        "On Wayland try:  GDK_BACKEND=x11 python -m pipeline.watch ...\n"
+        "\n"
+        "Or skip the window entirely:\n"
+        "  python -m pipeline.watch --video run.mp4\n"
+    )
+
+
 class Viewer:
     def __init__(self, track: TrackData, chassis_l_m: float, chassis_w_m: float,
                  show_beams: bool, display_px: int = 1100):
@@ -242,10 +279,13 @@ def main(argv=None) -> int:
             print("ERROR: could not open video writer (codec missing?).")
             return 2
     else:
+        if not _opencv_gui_available():
+            print(_no_display_help())
+            return 2
         try:
             cv2.namedWindow("attempt viewer", cv2.WINDOW_NORMAL)
         except cv2.error:
-            print("ERROR: no display available -- use --video out.mp4 instead.")
+            print(_no_display_help())
             return 2
         print("live window open. Tips: early-training policies may barely "
               "move (the picture only crawls) -- try --stochastic "

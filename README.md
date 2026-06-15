@@ -83,11 +83,30 @@ For RL training (step 2+): `pip install -e ".[rl]"` or `pip install -e ".[dev]"`
 
 ## Quick start
 
+### One command (steps 0-4)
+
+**Jetson / Linux:**
+
+```bash
+bash scripts/run_pipeline.sh quick_train sample
+# or: bash scripts/run_pipeline.sh deep_learn spa artifacts_spa
+```
+
+**Windows laptop:**
+
+```powershell
+.\scripts\run_pipeline.ps1 quick_train sample
+# or: .\scripts\run_pipeline.ps1 deep_learn spa artifacts_spa
+```
+
+### Manual steps
+
 ```bash
 python -m pipeline.step1 --preset sample   # recommended — no prompts
-python -m pipeline.step2
+python -m pipeline.step2 --mode quick_train   # faster pass (~30-45 min on small tracks/hardware permitting)
+# or: python -m pipeline.step2 --mode deep_learn
 python -m pipeline.watch              # optional: visualize training
-python -m pipeline.step3
+python -m pipeline.step3 --mode quick_train --params-file config/default_car.yaml
 ```
 
 **Cross-track memory:** each step 2/3 run archives its PPO weights under `policy_memory/`.
@@ -98,6 +117,23 @@ from the best compatible past policy. Use `--fresh` on step 2 or step 3 to ignor
 python -m pipeline.step4
 python -m pipeline.step5 --laps 3
 ```
+
+### Step 2 training modes
+
+- `--mode bullet_learn`: bare-minimum budget (fixed start, 1 physics substep, coarser dt, tiny PPO net) for the fastest smoke test.
+- `--mode quick_train`: shorter budget + lighter simulator settings (fixed start, fewer physics substeps) for rapid iteration.
+- `--mode deep_learn`: full-fidelity settings (random spawn + full physics substeps) for the most robust policy.
+- `--mode deep_learn_xhigh`: maximum training (6 parallel envs, 6 physics substeps, 5000 max steps/run, 2M step-2 budget).
+- Use the **same `--mode`** for step 2 and step 3.
+- Steps 0, 1, and 4 are mode-independent (setup, map ingest, zone math).
+- You can still override mode defaults with `--timesteps` and `--n-envs`.
+
+| Mode | Step 2 timesteps | Step 3 timesteps | Spawn | Physics substeps | Notes |
+|------|------------------|------------------|-------|------------------|-------|
+| `bullet_learn` | 75k | 50k | fixed start | 1 | dt=0.10, motor dynamics off, 64×64 net |
+| `quick_train` | 250k | 200k | fixed start | 2 | |
+| `deep_learn` | 1M | 600k | random | 4 | |
+| `deep_learn_xhigh` | 2M | 1M | random | **6** | max_steps=5000, 6 envs |
 
 ## Physics (v2)
 
