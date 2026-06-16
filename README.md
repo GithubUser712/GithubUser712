@@ -4,13 +4,30 @@ Offline pipeline that turns a hand-drawn (or SLAM-generated) track image into
 an optimal racing line with braking/acceleration zones for an F1TENTH-style
 RC car (Jetson Orin Nano + VESC 6 + RPLidar A2M12, ROS 2 Jazzy).
 
+## Clone & branches
+
+**Current branch (latest code):** `feature/cross-track-policy-memory` — merged into `main`.
+
+```bash
+git clone https://github.com/GithubUser712/GithubUser712.git
+cd GithubUser712
+git checkout main
+# or explicitly: git checkout feature/cross-track-policy-memory
+git pull
+```
+
+`main` is kept in sync with the newest feature branch. Older `cursor/*` branches
+are historical snapshots; use `main` (or the branch named above) for Jetson and
+laptop work.
+
 ## Jetson Orin Nano — start here
 
 **Step 0 (setup, one time):**
 ```bash
 git clone https://github.com/GithubUser712/GithubUser712.git
 cd GithubUser712
-git checkout cursor/step5-6-vesc-3d48    # main branch has no code yet
+git checkout main
+git pull
 bash scripts/jetson_setup.sh
 ```
 
