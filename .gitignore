@@ -4,3 +4,7 @@ __pycache__/
 venv/
 artifacts/
 artifacts_*/
+.pytest_cache/
+*.egg-info/
+dist/
+build/

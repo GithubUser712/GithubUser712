@@ -1,0 +1,8 @@
+# Step 0 + Step 1 only — no PyTorch, no RL stack.
+# Safe to install on Jetson Orin Nano before the heavy ML packages.
+numpy>=1.26
+opencv-python-headless>=4.9
+scipy>=1.11
+scikit-image>=0.22
+matplotlib>=3.8
+PyYAML>=6.0

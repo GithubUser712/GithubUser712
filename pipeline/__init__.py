@@ -1,12 +1,11 @@
 """Offline raceline pipeline for the self-driving RC car.
 
-Step 1 (this package, modules below): map ingestion
-    map_ingestion.py  -- load image -> binary occupancy grid + distance transform
-    validation.py     -- closed-loop / connectivity checks on the drivable area
-    centerline.py     -- skeleton -> ordered loop -> smooth resampled centerline
-    artifacts.py      -- write map.pgm/map.yaml, centerline.csv, track_meta.yaml, debug.png
-    step1.py          -- interactive CLI entry point (python -m pipeline.step1)
+Package layout (v2)
+-------------------
+raceline/     Core library — physics, validation, Gazebo export, control
+pipeline/     CLI entry points (python -m pipeline.stepN)
+car/          VESC hardware tools
 
-Later steps (RL racing line, vehicle parameters, braking/acceleration zones)
-consume the artifacts produced here and never re-read the raw drawing.
+Steps 1–5 consume/write artifacts in a shared directory (default: artifacts/).
+Every step runs preflight checks before starting.
 """

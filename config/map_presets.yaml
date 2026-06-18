@@ -1,0 +1,43 @@
+# Map presets at 0.01 m/px — coordinates live in maps/*.meta.yaml
+# Regenerate maps:  python tools/make_sample_map.py
+#                    python tools/make_f1_tracks.py
+# Run step 1:        python -m pipeline.step1 --preset NAME
+
+sample:
+  map: maps/sample_track.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/sample_track.meta.yaml
+
+monaco:
+  map: maps/monaco.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/monaco.meta.yaml
+
+spa:
+  map: maps/spa.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/spa.meta.yaml
+
+nurburgring:
+  map: maps/nurburgring.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/nurburgring.meta.yaml
+  variant: Gesamtstrecke (Kurzanbindung, ~24 km full-scale)
+
+isle_of_man:
+  map: maps/isle_of_man.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/isle_of_man.meta.yaml
+  variant: Snaefell Mountain Course (~37.7 mi / 60.7 km full-scale)
+
+targa_florio:
+  map: maps/targa_florio.png
+  resolution: 0.01
+  spacing: 0.01
+  meta: maps/targa_florio.meta.yaml
+  variant: Grande Circuito delle Madonie (~92 mi / 149 km full-scale)
